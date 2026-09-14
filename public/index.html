@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pinnule</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="pngicon" type="image/png" href="/favicon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar-id">
+    <span class="dot dot--live" id="conn-dot"></span>
+    <h1>homelab</h1>
+    <span class="bar-sub" id="host-time">--:--:--</span>
+  </div>
+  <button class="gear" id="settings-toggle" title="Configure" aria-label="Configure hardware monitor">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6">
+      <circle cx="12" cy="12" r="3"></circle>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+    </svg>
+  </button>
+</header>
+
+<aside id="settings-panel" class="settings" hidden>
+  <div class="settings-head">
+    <span>monitor config</span>
+    <button id="settings-close" aria-label="Close">&times;</button>
+  </div>
+
+  <div class="settings-group">
+    <label class="settings-row"><span>refresh interval</span>
+      <select id="opt-interval">
+        <option value="3000">3s</option>
+        <option value="5000" selected>5s</option>
+        <option value="10000">10s</option>
+        <option value="30000">30s</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="settings-group">
+    <div class="settings-label">hardware panels</div>
+    <label class="settings-row"><span>cpu load</span><input type="checkbox" data-metric="cpu" checked></label>
+    <label class="settings-row"><span>memory</span><input type="checkbox" data-metric="memory" checked></label>
+    <label class="settings-row"><span>disk</span><input type="checkbox" data-metric="disk" checked></label>
+    <label class="settings-row"><span>network i/o</span><input type="checkbox" data-metric="network" checked></label>
+    <label class="settings-row"><span>cpu temp</span><input type="checkbox" data-metric="temp" checked></label>
+    <label class="settings-row"><span>uptime</span><input type="checkbox" data-metric="uptime" checked></label>
+  </div>
+
+  <div class="settings-group">
+    <div class="settings-label">containers</div>
+    <label class="settings-row"><span>show stopped</span><input type="checkbox" id="opt-show-stopped" checked></label>
+  </div>
+</aside>
+
+<main>
+  <section id="hw-strip" class="hw-strip"></section>
+
+  <section class="containers-head">
+    <span id="container-count">detecting containers&hellip;</span>
+  </section>
+  <section id="container-grid" class="container-grid"></section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
