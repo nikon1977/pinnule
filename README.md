@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-Pinnule is a nimble, lightweight front-facing portal acting as a clean status window perched atop your local hardware layers.
-
-mostly vibe coded and is work in progress. 
-=======
 # pinnule
 
 Pinnule is a nimble, lightweight front-facing portal acting as a clean status
@@ -102,4 +97,3 @@ labels:
 ```
 
 Container cards also show runtime/creation information and Docker restart counts.
->>>>>>> 96a0e9d (Initial commit: Deploy complete Pinnule application stack)
