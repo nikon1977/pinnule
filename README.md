@@ -1,96 +1,76 @@
-# pinnule
+# Pinnule
 
-Pinnule is a nimble, lightweight front-facing portal acting as a clean status
-window perched atop your local hardware layers. It is fully vibe coded via
-multable A.I agents on a free to use bases. Still lots to do but is fully working.
+**A nimble, lightweight dashboard for your homelab.**
 
-## What it does
+Pinnule is a lightweight front-facing portal that sits on top of your local infrastructure and gives you a clean, real-time view of your Docker containers and host hardware.
 
-- **Auto-detects containers** by talking to the Docker socket directly
-  (`dockerode`) - no labels, no config file listing your apps. Anything
-  running on the host shows up: name, image, status, ports, and live
-  CPU/memory usage per container.
-- **Customizable hardware monitor**: CPU load, memory, disk, network
-  throughput, temperature, uptime - each panel can be switched on/off from
-  the settings drawer (gear icon, top right), along with the poll interval.
-  Preferences are saved in the browser (localStorage), so they persist
-  across reloads.
+It automatically discovers running containers, displays system statistics, and provides quick access to your applications — with minimal configuration.
 
-## Controlling containers & opening apps
+> **Built entirely through vibe coding with multiple AI agents.**
+>
+> It's very much a work in progress, but it's already fully functional and useful.
 
-Each card has a start/stop button (top right, next to the name). Stopping
-asks for confirmation first since it's disruptive; starting doesn't.
+---
 
-The container name itself is a link - click "adguard" and it opens
-AdGuard's dashboard in a new tab. It works by taking the container's first
-exposed public port and building `http://<dashboard-host>:<port>`, so it
-assumes that first port is the web UI. This will be changed as it is not always correct.
+## ✨ Features
 
-## Deploy it
+### 🐳 Automatic container discovery
 
-mkdir -p ~/pinnule
-cd ~/pinnule
+Pinnule talks directly to the Docker socket using [`dockerode`](https://github.com/apocas/dockerode).
 
-git clone https://github.com/nikon1977/pinnule.git .
+There is **no app configuration file** and no need to manually list your containers.
 
-docker compose up -d --build
+For each container Pinnule can display:
 
-Visit `http://server-ip:4000`.
+* Container name
+* Docker image
+* Running/stopped status
+* CPU usage
+* Memory usage
+* Runtime information
+* Creation time
+* Docker restart count
 
+Anything running on the Docker host can automatically appear on the dashboard.
 
-## Why host networking
+---
 
-`network_mode: host` is used instead of a `ports:` mapping. Without it, the
-container only sees its own virtual network interface, and the NET panel
-would show near-zero traffic no matter what the host is actually doing.
-Host networking gives it a real view of your NIC. The trade-off: it binds
-directly to port 4000 on the host, so make sure nothing else there uses it.
+### 🖥️ Hardware monitoring
 
-## Disk detection
+Pinnule provides a configurable overview of the host system, including:
 
-The DISK panel shows the main disk (`/`) plus anything mounted under
-`/mnt/` - other host mounts (`/boot`, `/boot/efi`, docker's internal
-overlay mounts, etc.) are filtered out on purpose so the panel only shows
-drives you'd actually care about. This relies on the `rslave` propagation
-on the bind mount in `docker-compose.yml` - without it, only the root
-filesystem would be visible, not other drives mounted under `/mnt/`. If a
-drive under `/mnt/` still doesn't show up after rebuilding, check `mount`
-on the host for how it's actually attached.
+* CPU load
+* Memory usage
+* Disk usage
+* Network throughput
+* Temperature
+* System uptime
 
-## Why `/:/hostfs:ro`
+The hardware panels can be enabled or disabled from the **Settings** drawer using the gear icon.
 
-CPU, memory, and uptime numbers come from `/proc` and `/sys`, which Docker
-doesn't sandbox by default - containers already see the host's real
-figures for those. Disk usage is different: without a mount, the DISK panel
-would report the container's own small overlay filesystem, not your actual
-drive. Mounting host root read-only at `/hostfs` fixes that. Nothing is
-writable from inside the container.
+The polling interval is also configurable.
 
-## If TEMP shows "n/a"
+Your preferences are stored in the browser using `localStorage`, so they persist between page reloads.
 
-Not every host exposes `/sys/class/thermal` in a way the container can
-read (depends on your CPU/motherboard sensors and kernel modules). It's
-harmless - just toggle that panel off in settings if it stays empty, or
-install `lm-sensors` on the host and re-check.
+---
 
-## Extending it
+## 🚀 App links & icons
 
-- `server.js` - two endpoints, `/api/containers` and `/api/system`. Add
-  fields here first.
-- `public/app.js` - polls those endpoints on an interval and re-renders.
-- `public/style.css` - all the CSS custom properties are at the top of the
-  file if you want to retheme it.
+Pinnule can automatically turn Docker containers into clickable application cards.
 
-## App links and icons
+By default, it uses the container's **first published Docker port** to build the application URL.
 
-Container cards now support optional Docker labels:
+For example:
 
-- `pinnule.url` — overrides the automatically detected first public port.
-- `pinnule.icon` — supplies a custom icon URL.
+```text
+http://192.168.1.230:8080
+```
 
-If no icon label is supplied, the dashboard tries the matching icon from the selfh.st icon set and hides a failed image cleanly. If no URL label is supplied, the first published Docker port remains the automatic app link.
+This works well for many applications, but isn't always correct.
 
-Example:
+### Docker labels
+
+You can override the automatic behaviour with optional Docker labels:
 
 ```yaml
 labels:
@@ -98,7 +78,243 @@ labels:
   - pinnule.icon=https://example.com/icon.png
 ```
 
-Container cards also show runtime/creation information and Docker restart counts.
+#### `pinnule.url`
 
-License
-This project is licensed under the MIT License - see the LICENSE file for details.
+Overrides the automatically detected application URL.
+
+#### `pinnule.icon`
+
+Provides a custom icon URL.
+
+If no icon is specified, Pinnule automatically attempts to find a matching icon from the [Selfh.st Icons](https://selfh.st/icons/) collection.
+
+If an icon cannot be found, it is hidden cleanly rather than leaving a broken-image placeholder.
+
+---
+
+## 🎮 Controlling containers
+
+Each container card includes a start/stop control.
+
+### Start
+
+Starting a container happens immediately.
+
+### Stop
+
+Stopping a container requires confirmation because it can interrupt a running application.
+
+The container name itself is also clickable when an application URL can be determined.
+
+---
+
+## 📦 Deployment
+
+Pinnule is designed to be very simple to deploy.
+
+### Clone the repository
+
+```bash
+mkdir -p ~/pinnule
+cd ~/pinnule
+
+git clone https://github.com/nikon1977/pinnule.git .
+```
+
+### Start Pinnule
+
+```bash
+docker compose up -d --build
+```
+
+Once the container has started, open:
+
+```text
+http://SERVER-IP:4000
+```
+
+For example:
+
+```text
+http://192.168.1.230:4000
+```
+
+---
+
+## 🌐 Why host networking?
+
+Pinnule uses:
+
+```yaml
+network_mode: host
+```
+
+rather than a Docker `ports:` mapping.
+
+This is important for the network monitoring functionality.
+
+With normal Docker networking, Pinnule would see the container's virtual network interface rather than the host's actual network traffic.
+
+Host networking allows Pinnule to see the real network interface and therefore report meaningful network throughput.
+
+### The trade-off
+
+Pinnule binds directly to port `4000` on the Docker host.
+
+Make sure another application isn't already using that port.
+
+---
+
+## 💾 Disk detection
+
+The **DISK** panel displays:
+
+* The main `/` filesystem
+* Filesystems mounted under `/mnt/`
+
+Other mounts such as:
+
+* `/boot`
+* `/boot/efi`
+* Docker overlay filesystems
+* Other internal mounts
+
+are intentionally filtered out.
+
+The goal is to show the disks and mounts that are actually useful to a homelab user.
+
+This relies on `rslave` mount propagation in `docker-compose.yml`.
+
+Without it, Pinnule may only see the root filesystem and not additional drives mounted beneath `/mnt/`.
+
+If a drive still doesn't appear after rebuilding Pinnule, check the host with:
+
+```bash
+mount
+```
+
+---
+
+## 🔒 Why `/:/hostfs:ro`?
+
+Pinnule needs access to some information from the Docker host.
+
+CPU, memory and uptime information comes from:
+
+```text
+/proc
+/sys
+```
+
+Docker already exposes these areas sufficiently for Pinnule to read the host's statistics.
+
+Disk usage is different.
+
+Without access to the host filesystem, Pinnule would see the container's own Docker overlay filesystem instead of the actual host disks.
+
+The solution is to mount the host filesystem read-only:
+
+```text
+/:/hostfs:ro
+```
+
+This allows Pinnule to inspect the host filesystem without giving it write access.
+
+**Nothing inside the container can write to the host through this mount.**
+
+---
+
+## 🌡️ If TEMP shows `n/a`
+
+Temperature monitoring depends on what sensors your hardware and kernel expose through:
+
+```text
+/sys/class/thermal
+```
+
+Some systems simply don't expose usable temperature information there.
+
+If temperature remains unavailable, you can either:
+
+1. Disable the TEMP panel in Pinnule's settings, or
+2. Install `lm-sensors` on the host and check whether additional sensors become available.
+
+This is harmless and does not affect the rest of Pinnule.
+
+---
+
+## 🛠️ Extending Pinnule
+
+The project is intentionally simple and easy to modify.
+
+### `server.js`
+
+Provides the backend API:
+
+```text
+/api/containers
+/api/system
+```
+
+Add new backend information here first.
+
+### `public/app.js`
+
+Polls the API and updates the dashboard.
+
+### `public/style.css`
+
+Contains the dashboard styling.
+
+CSS custom properties are located near the top of the file, making it easy to change the theme.
+
+---
+
+## 🤖 Development
+
+Pinnule was built using a **vibe-coding workflow with multiple AI agents**.
+
+The project is intentionally kept relatively small and straightforward so that it remains easy to understand, modify and experiment with.
+
+There is still plenty I'd like to add.
+
+---
+
+## 📋 Roadmap
+
+Pinnule is already functional, but there is plenty of room for improvement.
+
+Some areas I'd like to explore:
+
+* Better application URL detection
+* More container controls
+* Additional hardware metrics
+* More detailed network information
+* Improved application discovery
+* More dashboard customisation
+* More configuration options
+
+---
+
+## 📄 License
+
+Pinnule is released under the **MIT License**.
+
+See [`LICENSE`](LICENSE) for the full license text.
+
+---
+
+## 👤 Author
+
+Created by **nikon1977**.
+
+GitHub:
+https://github.com/nikon1977
+
+---
+
+## ⭐ If you find Pinnule useful
+
+If Pinnule is useful in your homelab, consider giving the project a ⭐ on GitHub.
+
+Feedback, ideas and contributions are welcome.
