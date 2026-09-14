@@ -1,1 +1,1 @@
-Vibe coded work in progress. 
+mostly vibe coded and is work in progress. 
