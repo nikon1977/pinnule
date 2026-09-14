@@ -29,9 +29,10 @@ assumes that first port is the web UI. This will be changed as it is not always 
 
 mkdir -p ~/pinnule
 cd ~/pinnule
-git clone https://github.com/nikon1977/pinnule.git .
-docker compose up -d --build
 
+git clone https://github.com/nikon1977/pinnule.git .
+
+docker compose up -d --build
 
 Visit `http://server-ip:4000`.
 
