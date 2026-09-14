@@ -99,3 +99,6 @@ labels:
 ```
 
 Container cards also show runtime/creation information and Docker restart counts.
+
+License
+This project is licensed under the MIT License - see the LICENSE file for details.
