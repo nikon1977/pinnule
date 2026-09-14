@@ -1,7 +1,8 @@
 # pinnule
 
 Pinnule is a nimble, lightweight front-facing portal acting as a clean status
-window perched atop your local hardware layers.
+window perched atop your local hardware layers. It is fully vibe coded via
+multable A.I agents on a free to use bases. Still lots to do but is is fully working.
 
 ## What it does
 
