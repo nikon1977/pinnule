@@ -1,17 +1,12 @@
 {
-  "name": "Your Website Name",
-  "short_name": "Website",
+  "name": "pinnule",
+  "short_name": "pinnule",
   "icons": [
-    {
-      "src": "/icons.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
     {
       "src": "/icon.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ],
   "theme_color": "#ffffff",
