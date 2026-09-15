@@ -82,8 +82,7 @@ const pinnuleAuth = (() => {
   function handleSessionExpired() {
     if (window.pinnuleStop) window.pinnuleStop();
     openOverlay();
-    setMode('login', usernameInput.value);
-    showError('your session expired \u2014 please sign in again');
+    checkStatus().then(() => showError('your session expired \u2014 please sign in again'));
   }
 
   async function submitLogin(username, password) {

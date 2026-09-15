@@ -438,6 +438,7 @@ body.auth-pending main {
   background: var(--bg);
   padding: 20px;
 }
+.auth-overlay[hidden] { display: none; }
 
 .auth-card {
   width: 100%;
