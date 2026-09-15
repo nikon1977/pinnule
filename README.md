@@ -6,6 +6,8 @@ Pinnule is a lightweight front-facing portal that sits on top of your local infr
 
 It automatically discovers running containers, displays system statistics, and provides quick access to your applications — with minimal configuration.
 
+![Pinnule dashboard](screenshots/pinnule.png)
+
 > **Built entirely through vibe coding with multiple AI agents.**
 >
 > It's very much a work in progress, but it's already fully functional and useful.
