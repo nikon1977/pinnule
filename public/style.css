@@ -76,6 +76,7 @@ html, body {
   cursor: pointer;
 }
 .gear:hover { color: var(--accent); border-color: var(--accent); }
+.gear[hidden] { display: none; }
 .gear:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -479,6 +480,7 @@ body.auth-pending main {
   display: block;
   margin-bottom: 14px;
 }
+.auth-field[hidden] { display: none; }
 
 .auth-field span {
   display: block;
