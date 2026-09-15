@@ -11,6 +11,10 @@ services:
         read_only: true
         bind:
           propagation: rslave
+      - pinnule_data:/app/data
     environment:
       - PORT=4000
     restart: unless-stopped
+
+volumes:
+  pinnule_data:

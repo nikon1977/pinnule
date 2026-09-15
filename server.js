@@ -1,4 +1,5 @@
 const os = require('os');
+const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const Docker = require('dockerode');
@@ -7,7 +8,44 @@ const si = require('systeminformation');
 const PORT = process.env.PORT || 4000;
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
+// ---- figure out our own container id, so we can hide ourselves from the list ----
+
+function getSelfContainerId() {
+  try {
+    // works for both cgroup v1 (".../docker/<64-hex-id>") and v2
+    // (e.g. "0::/system.slice/docker-<64-hex-id>.scope") layouts.
+    const raw = fs.readFileSync('/proc/self/cgroup', 'utf8');
+    const match = raw.match(/[0-9a-f]{64}/);
+    if (match) return match[0];
+  } catch (e) { /* not available outside Linux containers */ }
+  return null;
+}
+
+const SELF_ID = getSelfContainerId();
+const SELF_NAME = 'pinnule'; // matches container_name in docker-compose.yml, used as a fallback
+
+// ---- persisted URL overrides (server-side, so they survive across browsers/devices) ----
+
+const DATA_DIR = process.env.DATA_DIR || '/app/data';
+const OVERRIDES_FILE = path.join(DATA_DIR, 'url-overrides.json');
+
+function loadUrlOverrides() {
+  try {
+    return JSON.parse(fs.readFileSync(OVERRIDES_FILE, 'utf8'));
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveUrlOverrides(overrides) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(OVERRIDES_FILE, JSON.stringify(overrides, null, 2));
+}
+
+let urlOverrides = loadUrlOverrides();
+
 const app = express();
+app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ---- containers: auto-detected from the Docker socket, no config needed ----
@@ -27,8 +65,13 @@ function cpuPercentFromStats(stats) {
 app.get('/api/containers', async (req, res) => {
   try {
     const list = await docker.listContainers({ all: true });
+    const others = list.filter(c => {
+      if (SELF_ID) return c.Id !== SELF_ID;
+      const name = (c.Names && c.Names[0] || '').replace(/^\//, '');
+      return name !== SELF_NAME;
+    });
 
-    const enriched = await Promise.all(list.map(async (c) => {
+    const enriched = await Promise.all(others.map(async (c) => {
       const name = (c.Names && c.Names[0] || c.Id.slice(0, 12)).replace(/^\//, '');
       let cpuPct = null, memUsed = null, memLimit = null;
       let restartCount = 0, startedAt = null, labels = c.Labels || {};
@@ -54,7 +97,9 @@ app.get('/api/containers', async (req, res) => {
         public: p.PublicPort, private: p.PrivatePort, protocol: p.Type || 'tcp'
       }));
       const autoUrl = ports.length ? `http://${req.hostname}:${ports[0].public}` : null;
-      const appUrl = labels['homelab.dashboard.url'] || autoUrl;
+      const labelUrl = labels['homelab.dashboard.url'] || autoUrl;
+      const hasOverride = Object.prototype.hasOwnProperty.call(urlOverrides, name);
+      const appUrl = hasOverride ? urlOverrides[name] : labelUrl;
       const icon = labels['homelab.dashboard.icon'] || null;
 
       return {
@@ -65,6 +110,8 @@ app.get('/api/containers', async (req, res) => {
         status: c.Status,
         ports,
         appUrl,
+        autoUrl: labelUrl,
+        urlOverridden: hasOverride,
         icon,
         restartCount,
         startedAt,
@@ -167,6 +214,34 @@ app.post('/api/containers/:id/stop', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ---- custom app URLs (keyed by container name, persisted to disk) ----
+
+app.put('/api/containers/:name/url', (req, res) => {
+  const name = req.params.name;
+  const url = (req.body && typeof req.body.url === 'string') ? req.body.url.trim() : '';
+  if (!url) {
+    return res.status(400).json({ error: 'url is required' });
+  }
+  urlOverrides[name] = url;
+  try {
+    saveUrlOverrides(urlOverrides);
+  } catch (err) {
+    return res.status(500).json({ error: `could not save: ${err.message}` });
+  }
+  res.json({ ok: true, name, url });
+});
+
+app.delete('/api/containers/:name/url', (req, res) => {
+  const name = req.params.name;
+  delete urlOverrides[name];
+  try {
+    saveUrlOverrides(urlOverrides);
+  } catch (err) {
+    return res.status(500).json({ error: `could not save: ${err.message}` });
+  }
+  res.json({ ok: true, name });
 });
 
 app.listen(PORT, () => {

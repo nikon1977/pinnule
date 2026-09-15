@@ -23,6 +23,8 @@ function saveSettings(s) {
 
 let settings = loadSettings();
 let pollTimer = null;
+let lastContainers = [];
+let editingName = null;
 
 // ---------- helpers ----------
 
@@ -171,6 +173,7 @@ function renderHardware(data) {
 // ---------- rendering: containers ----------
 
 function renderContainers(list) {
+  lastContainers = list;
   const grid = document.getElementById('container-grid');
   const countEl = document.getElementById('container-count');
 
@@ -210,13 +213,41 @@ function renderContainers(list) {
       actionBtn = `<span class="c-btn c-btn--disabled">${c.state}\u2026</span>`;
     }
 
-    const host = window.location.hostname;
-    const primaryPort = c.ports.length ? c.ports[0].public : null;
-    const appUrl = c.appUrl || (primaryPort ? `http://${host}:${primaryPort}` : null);
+    const autoUrl = c.autoUrl != null ? c.autoUrl : c.appUrl;
+    const hasOverride = !!c.urlOverridden;
+    const appUrl = c.appUrl;
     const iconUrl = appIcon(c.name, c.icon);
-    const nameHtml = appUrl
-      ? `<a class="c-name" href="${escapeHtml(appUrl)}" target="_blank" rel="noopener" title="open ${escapeHtml(c.name)}"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.name)}</span></a>`
-      : `<span class="c-name"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.name)}</span></span>`;
+
+    let nameHtml;
+    if (editingName === c.name) {
+      nameHtml = `
+        <form class="c-edit-form" data-name="${escapeHtml(c.name)}">
+          <input class="c-url-input" type="text" name="url"
+            value="${escapeHtml(appUrl || '')}"
+            placeholder="${escapeHtml(autoUrl || 'http://host:port')}"
+            autocomplete="off" spellcheck="false">
+          <button type="submit" class="c-edit-icon-btn c-edit-save" title="save" aria-label="save">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </button>
+          <button type="button" class="c-edit-icon-btn c-edit-cancel" data-action="cancel-url" title="cancel" aria-label="cancel">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+          ${hasOverride ? `<button type="button" class="c-edit-icon-btn c-edit-reset" data-action="reset-url" data-name="${escapeHtml(c.name)}" title="reset to auto-detected" aria-label="reset to auto-detected">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+          </button>` : ''}
+        </form>`;
+    } else {
+      const link = appUrl
+        ? `<a class="c-name-link" href="${escapeHtml(appUrl)}" target="_blank" rel="noopener" title="open ${escapeHtml(c.name)}"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.name)}</span></a>`
+        : `<span class="c-name-link"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.name)}</span></span>`;
+      nameHtml = `
+        <span class="c-name">
+          ${link}
+          <button type="button" class="c-edit-icon-btn c-edit-trigger" data-action="edit-url" data-name="${escapeHtml(c.name)}" title="edit link${hasOverride ? ' (custom)' : ''}" aria-label="edit link">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
+          </button>
+        </span>`;
+    }
 
     const runtime = c.state === 'running' ? fmtStartedAt(c.startedAt) : null;
     const metaBlock = `
@@ -261,12 +292,99 @@ async function controlContainer(id, action, btn) {
 }
 
 document.getElementById('container-grid').addEventListener('click', (e) => {
-  const btn = e.target.closest('.c-btn[data-action]');
-  if (!btn) return;
-  const { action, id, name } = btn.dataset;
-  if (action === 'stop' && !confirm(`Stop ${name}?`)) return;
-  controlContainer(id, action, btn);
+  const startStopBtn = e.target.closest('.c-btn[data-action]');
+  if (startStopBtn) {
+    const { action, id, name } = startStopBtn.dataset;
+    if (action === 'stop' && !confirm(`Stop ${name}?`)) return;
+    controlContainer(id, action, startStopBtn);
+    return;
+  }
+
+  const editBtn = e.target.closest('[data-action="edit-url"]');
+  if (editBtn) {
+    editingName = editBtn.dataset.name;
+    renderContainers(lastContainers);
+    focusUrlInput();
+    return;
+  }
+
+  const cancelBtn = e.target.closest('[data-action="cancel-url"]');
+  if (cancelBtn) {
+    editingName = null;
+    renderContainers(lastContainers);
+    return;
+  }
+
+  const resetBtn = e.target.closest('[data-action="reset-url"]');
+  if (resetBtn) {
+    const name = resetBtn.dataset.name;
+    editingName = null;
+    resetContainerUrl(name);
+  }
 });
+
+document.getElementById('container-grid').addEventListener('submit', (e) => {
+  const form = e.target.closest('.c-edit-form');
+  if (!form) return;
+  e.preventDefault();
+  const name = form.dataset.name;
+  const value = form.elements.url.value.trim();
+  editingName = null;
+  if (value) {
+    saveContainerUrl(name, value);
+  } else {
+    resetContainerUrl(name);
+  }
+});
+
+document.getElementById('container-grid').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && e.target.closest('.c-edit-form')) {
+    editingName = null;
+    renderContainers(lastContainers);
+  }
+});
+
+async function saveContainerUrl(name, url) {
+  try {
+    const res = await fetch(`/api/containers/${encodeURIComponent(name)}/url`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'save failed');
+    }
+    await pollOnce();
+  } catch (err) {
+    showError(`could not save link: ${err.message}`);
+    renderContainers(lastContainers);
+  }
+}
+
+async function resetContainerUrl(name) {
+  try {
+    const res = await fetch(`/api/containers/${encodeURIComponent(name)}/url`, { method: 'DELETE' });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'reset failed');
+    }
+    await pollOnce();
+  } catch (err) {
+    showError(`could not reset link: ${err.message}`);
+    renderContainers(lastContainers);
+  }
+}
+
+function focusUrlInput() {
+  requestAnimationFrame(() => {
+    const input = document.querySelector('.c-edit-form .c-url-input');
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  });
+}
 
 // ---------- polling ----------
 
@@ -283,7 +401,12 @@ async function pollOnce() {
     const containers = await containersRes.json();
 
     renderHardware(sys);
-    renderContainers(containers);
+    if (editingName === null) {
+      renderContainers(containers);
+    } else {
+      // don't blow away an in-progress edit's focus/cursor on refresh
+      lastContainers = containers;
+    }
     dot.className = 'dot dot--live';
     clearError();
   } catch (err) {

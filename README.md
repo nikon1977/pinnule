@@ -52,21 +52,74 @@ The polling interval is also configurable.
 
 Your preferences are stored in the browser using `localStorage`, so they persist between page reloads.
 
----
+### App links and icons
 
-## 🚀 App links & icons
+Pinnule automatically discovers Docker containers and creates an app link from the first published container port it finds.
 
-Pinnule can automatically turn Docker containers into clickable application cards.
+You can also provide explicit links using Docker labels:
 
-By default, it uses the container's **first published Docker port** to build the application URL.
-
-For example:
-
-```text
-http://192.168.1.230:8080
+```yaml
+labels:
+  pinnule.url: "https://example.local"
+  pinnule.icon: "https://example.local/icon.png"
 ```
 
-This works well for many applications, but isn't always correct.
+If no custom icon is supplied, Pinnule falls back to the [Selfh.st Icons](https://selfh.st/icons/) collection using the container name.
+
+#### Custom container links
+
+Container links can be changed directly from the dashboard by clicking the **pencil icon** next to a container's link.
+
+Custom links are stored **server-side** rather than in the browser. This means your customised links are available regardless of:
+
+* Browser
+* Device
+* Private/incognito window
+* Browser cache or local storage
+
+Pinnule stores these overrides in:
+
+```text
+/app/data/url-overrides.json
+```
+
+The API provides endpoints for managing custom links:
+
+```text
+PUT    /api/containers/:name/url
+DELETE /api/containers/:name/url
+```
+
+`PUT` saves a custom URL for a container.
+
+`DELETE` removes the custom URL and returns the container to its automatically detected URL.
+
+The container API exposes three URL-related values:
+
+* `appUrl` — the final URL Pinnule should use
+* `autoUrl` — the automatically detected or Docker-label URL
+* `urlOverridden` — whether a custom URL is currently being used
+
+### Persistent application data
+
+Pinnule uses a Docker named volume for application data:
+
+```yaml
+volumes:
+  - pinnule_data:/app/data
+```
+
+The volume stores server-side configuration such as custom container URL overrides.
+
+Because the data is stored in a Docker volume, custom links survive:
+
+* Container restarts
+* Image updates
+* Container rebuilds
+* Docker Compose redeployments
+
+The data will remain available as long as the `pinnule_data` Docker volume is retained.
+
 
 ### Docker labels
 

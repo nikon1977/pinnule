@@ -233,6 +233,14 @@ main { padding: 20px 22px 40px; }
 }
 
 .c-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.c-name-link {
   font-size: 13.5px;
   font-weight: 600;
   overflow: hidden;
@@ -243,7 +251,55 @@ main { padding: 20px 22px 40px; }
   color: var(--text);
   text-decoration: none;
 }
-a.c-name:hover { color: var(--accent); }
+a.c-name-link:hover { color: var(--accent); }
+
+.c-edit-icon-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.c-edit-icon-btn:hover { color: var(--accent); border-color: var(--border); background: var(--panel-raised); }
+
+.c-edit-trigger {
+  opacity: 0.55;
+}
+.c-edit-trigger:hover,
+.c-edit-trigger:focus-visible {
+  opacity: 1;
+}
+
+.c-edit-form {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.c-url-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--accent);
+  background: var(--bg);
+  color: var(--text);
+}
+.c-url-input:focus { outline: none; }
+
+.c-edit-save:hover { color: var(--good); border-color: var(--good); }
+.c-edit-cancel:hover { color: var(--bad); border-color: var(--bad); }
 
 .c-btn {
   font-family: var(--mono);
