@@ -8,7 +8,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: getpinnule/pinnule
+  IMAGE_NAME: nikon1977/pinnule
 
 jobs:
   build-and-push:
@@ -20,12 +20,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -38,5 +38,5 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/getpinnule/pinnule:latest
-            ghcr.io/getpinnule/pinnule:${{ github.sha }}
+            ghcr.io/nikon1977/pinnule:latest
+            ghcr.io/nikon1977/pinnule:${{ github.sha }}
