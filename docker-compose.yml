@@ -1,20 +1,15 @@
 services:
   pinnule:
-    build: .
+    image: ghcr.io/nikon1977/pinnule:latest
     container_name: pinnule
-    network_mode: host
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - type: bind
-        source: /
-        target: /hostfs
-        read_only: true
-        bind:
-          propagation: rslave
-      - pinnule_data:/app/data
-    environment:
-      - PORT=4000
     restart: unless-stopped
+
+    ports:
+      - "4000:4000"
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - pinnule_data:/app/data
 
 volumes:
   pinnule_data:

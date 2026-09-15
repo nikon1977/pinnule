@@ -165,22 +165,44 @@ The container name itself is also clickable when an application URL can be deter
 
 ## 📦 Deployment
 
-Pinnule is designed to be very simple to deploy.
+Pinnule is designed to be simple to deploy using Docker Compose.
 
-### Clone the repository
+### Create the Compose file
+
+Create a directory for Pinnule:
 
 ```bash
 mkdir -p ~/pinnule
 cd ~/pinnule
+```
 
-git clone https://github.com/nikon1977/pinnule.git .
+Create `docker-compose.yml`:
+
+```yaml
+services:
+  pinnule:
+    image: ghcr.io/nikon1977/pinnule:latest
+    container_name: pinnule
+    restart: unless-stopped
+
+    ports:
+      - "4000:4000"
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - pinnule_data:/app/data
+
+volumes:
+  pinnule_data:
 ```
 
 ### Start Pinnule
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
+
+Docker will automatically pull the latest Pinnule image from GitHub Container Registry.
 
 Once the container has started, open:
 
@@ -194,7 +216,27 @@ For example:
 http://192.168.1.230:4000
 ```
 
----
+### Updating Pinnule
+
+To update to the latest published version:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Your custom container links are stored in the `pinnule_data` Docker volume, so they persist when Pinnule is updated or recreated.
+
+### Using a specific version
+
+Pinnule releases can also be pinned to a specific version instead of using `latest`:
+
+```yaml
+image: ghcr.io/nikon1977/pinnule:1.1.0
+```
+
+This allows you to stay on a known version until you are ready to upgrade.
+
 
 ## 🌐 Why host networking?
 
