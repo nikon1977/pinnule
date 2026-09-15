@@ -1,5 +1,7 @@
 # Pinnule
 
+Current version 1.2.0
+
 **A nimble, lightweight dashboard for your homelab.**
 
 Pinnule is a lightweight front-facing portal that sits on top of your local infrastructure and gives you a clean, real-time view of your Docker containers and host hardware.
