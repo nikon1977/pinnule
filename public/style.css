@@ -517,3 +517,90 @@ body.auth-pending main {
 }
 .auth-submit:hover { background: var(--accent); color: var(--bg); }
 .auth-submit:disabled { opacity: 0.5; cursor: default; background: var(--panel-raised); color: var(--accent); }
+
+.auth-remember {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: -2px 0 14px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.auth-remember input { accent-color: var(--accent); width: 14px; height: 14px; }
+
+.auth-link {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  text-align: center;
+  cursor: pointer;
+  padding: 0;
+}
+.auth-link:hover { color: var(--accent); }
+.auth-link[hidden] { display: none; }
+
+.auth-recovery-code {
+  font-family: var(--mono);
+  font-size: 17px;
+  letter-spacing: 0.06em;
+  text-align: center;
+  color: var(--accent);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 14px 10px;
+  margin: 16px 0 20px;
+  user-select: all;
+  word-break: break-all;
+}
+.auth-recovery-code--small {
+  font-size: 13px;
+  padding: 8px;
+  margin: 8px 0 0;
+}
+
+/* ---------- settings: security mini-forms ---------- */
+
+.mini-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.mini-form input {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  width: 100%;
+}
+.mini-form input:focus { outline: none; border-color: var(--accent); }
+.mini-btn {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 6px 0;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--panel-raised);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.mini-btn:hover { color: var(--accent); border-color: var(--accent); }
+.mini-status {
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 3px;
+}
+.mini-status.ok { color: var(--good); border: 1px solid var(--good); }
+.mini-status.err { color: var(--bad); border: 1px solid var(--bad); }
+.mini-status[hidden] { display: none; }

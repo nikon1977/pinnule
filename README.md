@@ -18,10 +18,14 @@ It automatically discovers running containers, displays system statistics, and p
 
 Pinnule is gated behind a single local admin account.
 
-* **First run**: opening Pinnule for the first time shows a setup screen — pick a username and password (min. 8 characters) and confirm the password. That becomes the one account for the dashboard.
-* **After that**: you'll see a normal login screen. Sessions last 30 days of activity and are stored server-side, so a container restart doesn't force a re-login.
-* Credentials are stored as a bcrypt hash in `auth.json` on the `pinnule_data` volume (see [Persistent application data](#persistent-application-data)) — never in plain text, never in the image, never in git.
+* **First run**: opening Pinnule for the first time shows a setup screen — pick a username and password (min. 8 characters) and confirm the password. That becomes the one account for the dashboard. Right after, you'll be shown a **recovery code** once — save it somewhere safe, it's the only way back in if you forget your password.
+* **After that**: you'll see a normal login screen. A "keep me signed in on this device" checkbox controls session length — checked gives you a 30-day session that renews with activity; unchecked gives a short 8-hour session, useful for a shared or kiosk-style screen you don't want to stay logged into.
+* **Forgot your password?** Use the "forgot password?" link on the login screen with your username and recovery code to set a new password. Using the code rotates it — you'll be shown a fresh one to save afterwards.
+* Once signed in, the gear menu has a **security** section to change your password or generate a new recovery code (both require your current password).
+* Credentials are stored as a bcrypt hash in `auth.json` on the `pinnule_data` volume (see [Persistent application data](#persistent-application-data)) — never in plain text, never in the image, never in git. The recovery code is stored the same way — only its hash is kept.
 * There's a logout button (next to the gear icon) once you're signed in.
+
+If you ever lose both your password and your recovery code, the account can only be reset by removing `auth.json` from the data volume (`docker exec -it pinnule rm /app/data/auth.json`), which clears the account entirely and shows the setup screen again on next load.
 
 ## ✨ Features
 
@@ -120,7 +124,7 @@ volumes:
   - pinnule_data:/app/data
 ```
 
-The volume stores server-side configuration such as custom container URL overrides, plus the login account (`auth.json`, bcrypt-hashed password) and the session signing secret (`session-secret.txt`).
+The volume stores server-side configuration such as custom container URL overrides, plus the login account (`auth.json` — bcrypt-hashed password and recovery code) and the session signing secret (`session-secret.txt`).
 
 Because the data is stored in a Docker volume, custom links survive:
 

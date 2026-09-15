@@ -24,8 +24,13 @@
       <input type="text" id="auth-username" name="username" autocomplete="username" required>
     </label>
 
+    <label class="auth-field" id="auth-code-field" hidden>
+      <span>recovery code</span>
+      <input type="text" id="auth-code" name="recoveryCode" autocomplete="off" placeholder="XXXX-XXXX-XXXX">
+    </label>
+
     <label class="auth-field">
-      <span>password</span>
+      <span id="auth-password-label">password</span>
       <input type="password" id="auth-password" name="password" autocomplete="current-password" required>
     </label>
 
@@ -34,8 +39,26 @@
       <input type="password" id="auth-confirm" name="confirmPassword" autocomplete="new-password">
     </label>
 
+    <label class="auth-remember">
+      <input type="checkbox" id="auth-remember" checked>
+      <span>keep me signed in on this device</span>
+    </label>
+
     <button type="submit" class="auth-submit" id="auth-submit">sign in</button>
+
+    <button type="button" class="auth-link" id="auth-forgot-link" hidden>forgot password?</button>
+    <button type="button" class="auth-link" id="auth-back-link" hidden>back to sign in</button>
   </form>
+
+  <div id="auth-recovery-view" class="auth-card" hidden>
+    <h1 class="auth-title">save your recovery code</h1>
+    <p class="auth-subtitle">
+      if you ever forget your password, this code is the only way back in.
+      it won't be shown again &mdash; store it somewhere safe.
+    </p>
+    <div class="auth-recovery-code" id="auth-recovery-code-display"></div>
+    <button type="button" class="auth-submit" id="auth-recovery-continue">I've saved it &mdash; continue</button>
+  </div>
 </div>
 
 <header class="bar">
@@ -91,6 +114,25 @@
   <div class="settings-group">
     <div class="settings-label">containers</div>
     <label class="settings-row"><span>show stopped</span><input type="checkbox" id="opt-show-stopped" checked></label>
+  </div>
+
+  <div class="settings-group">
+    <div class="settings-label">security</div>
+
+    <form id="change-password-form" class="mini-form">
+      <input type="password" id="cp-current" placeholder="current password" autocomplete="current-password" required>
+      <input type="password" id="cp-new" placeholder="new password" autocomplete="new-password" required>
+      <input type="password" id="cp-confirm" placeholder="confirm new password" autocomplete="new-password" required>
+      <button type="submit" class="mini-btn">change password</button>
+      <div id="cp-status" class="mini-status" hidden></div>
+    </form>
+
+    <form id="regen-code-form" class="mini-form">
+      <input type="password" id="rc-current" placeholder="current password" autocomplete="current-password" required>
+      <button type="submit" class="mini-btn">new recovery code</button>
+      <div id="rc-status" class="mini-status" hidden></div>
+      <div id="rc-code-display" class="auth-recovery-code auth-recovery-code--small" hidden></div>
+    </form>
   </div>
 </aside>
 

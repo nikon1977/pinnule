@@ -82,31 +82,58 @@ function loadOrCreateSessionSecret() {
 let auth = loadAuth();
 const SESSION_SECRET = loadOrCreateSessionSecret();
 
-// very small brute-force guard for the login endpoint, keyed by IP.
-// in-memory only: resets on restart, which is fine for its purpose.
-const LOGIN_WINDOW_MS = 15 * 60 * 1000;
-const LOGIN_MAX_ATTEMPTS = 10;
-const loginAttempts = new Map();
+// very small brute-force guard for login and account-recovery attempts,
+// keyed by "type:ip". in-memory only: resets on restart, which is fine for
+// its purpose.
+const RATE_WINDOW_MS = 15 * 60 * 1000;
+const RATE_MAX_ATTEMPTS = 10;
+const attemptTracker = new Map();
+const DUMMY_HASH = '$2a$12$./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxy'; // fixed 60-char bcrypt-shaped hash used to equalize compare() timing when the real target doesn't exist
 
-function tooManyLoginAttempts(ip) {
+function tooManyAttempts(type, ip) {
+  const key = `${type}:${ip}`;
   const now = Date.now();
-  const entry = loginAttempts.get(ip);
-  if (!entry || now - entry.firstAttempt > LOGIN_WINDOW_MS) return false;
-  return entry.count >= LOGIN_MAX_ATTEMPTS;
+  const entry = attemptTracker.get(key);
+  if (!entry || now - entry.firstAttempt > RATE_WINDOW_MS) return false;
+  return entry.count >= RATE_MAX_ATTEMPTS;
 }
 
-function recordLoginAttempt(ip, succeeded) {
+function recordAttempt(type, ip, succeeded) {
+  const key = `${type}:${ip}`;
   const now = Date.now();
   if (succeeded) {
-    loginAttempts.delete(ip);
+    attemptTracker.delete(key);
     return;
   }
-  const entry = loginAttempts.get(ip);
-  if (!entry || now - entry.firstAttempt > LOGIN_WINDOW_MS) {
-    loginAttempts.set(ip, { count: 1, firstAttempt: now });
+  const entry = attemptTracker.get(key);
+  if (!entry || now - entry.firstAttempt > RATE_WINDOW_MS) {
+    attemptTracker.set(key, { count: 1, firstAttempt: now });
   } else {
     entry.count += 1;
   }
+}
+
+// recovery codes: shown once at setup (and once each time they're used /
+// regenerated), stored only as a bcrypt hash — same treatment as the
+// password itself.
+const RECOVERY_CODE_CHARSET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O/1/I/L, easier to transcribe by hand
+function generateRecoveryCode() {
+  const groups = [];
+  for (let g = 0; g < 3; g++) {
+    let group = '';
+    for (let i = 0; i < 4; i++) {
+      group += RECOVERY_CODE_CHARSET[crypto.randomInt(RECOVERY_CODE_CHARSET.length)];
+    }
+    groups.push(group);
+  }
+  return groups.join('-');
+}
+
+const REMEMBER_SESSION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SHORT_SESSION_MS = 8 * 60 * 60 * 1000; // 8 hours, for shared/kiosk screens
+
+function applySessionLength(req, remember) {
+  req.session.cookie.maxAge = remember === false ? SHORT_SESSION_MS : REMEMBER_SESSION_MS;
 }
 
 const app = express();
@@ -148,7 +175,7 @@ app.post('/api/auth/setup', async (req, res) => {
   if (auth) {
     return res.status(409).json({ error: 'setup already completed' });
   }
-  const { username, password, confirmPassword } = req.body || {};
+  const { username, password, confirmPassword, remember } = req.body || {};
   if (typeof username !== 'string' || !username.trim()) {
     return res.status(400).json({ error: 'username is required' });
   }
@@ -160,7 +187,14 @@ app.post('/api/auth/setup', async (req, res) => {
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
-  auth = { username: username.trim(), passwordHash, createdAt: new Date().toISOString() };
+  const recoveryCode = generateRecoveryCode();
+  const recoveryCodeHash = await bcrypt.hash(recoveryCode, 12);
+  auth = {
+    username: username.trim(),
+    passwordHash,
+    recoveryCodeHash,
+    createdAt: new Date().toISOString(),
+  };
   try {
     saveAuth(auth);
   } catch (err) {
@@ -172,7 +206,8 @@ app.post('/api/auth/setup', async (req, res) => {
     if (err) return res.status(500).json({ error: 'could not start session' });
     req.session.authenticated = true;
     req.session.username = auth.username;
-    res.json({ ok: true, username: auth.username });
+    applySessionLength(req, remember);
+    res.json({ ok: true, username: auth.username, recoveryCode });
   });
 });
 
@@ -181,31 +216,80 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(409).json({ error: 'setup not completed' });
   }
   const ip = req.ip;
-  if (tooManyLoginAttempts(ip)) {
+  if (tooManyAttempts('login', ip)) {
     return res.status(429).json({ error: 'too many attempts, try again later' });
   }
 
-  const { username, password } = req.body || {};
+  const { username, password, remember } = req.body || {};
   const providedUsername = typeof username === 'string' ? username.trim() : '';
   const providedPassword = typeof password === 'string' ? password : '';
 
   const usernameMatches = providedUsername === auth.username;
   // always run bcrypt.compare, even on a username mismatch, against a fixed
   // dummy hash, so response timing doesn't reveal whether the username exists
-  const hashToCheck = usernameMatches ? auth.passwordHash : '$2a$12$invalidinvalidinvaliduinvalidinvalidinvalidinvalidin';
+  const hashToCheck = usernameMatches ? auth.passwordHash : DUMMY_HASH;
   const passwordMatches = await bcrypt.compare(providedPassword, hashToCheck).catch(() => false);
 
   if (!usernameMatches || !passwordMatches) {
-    recordLoginAttempt(ip, false);
+    recordAttempt('login', ip, false);
     return res.status(401).json({ error: 'invalid username or password' });
   }
 
-  recordLoginAttempt(ip, true);
+  recordAttempt('login', ip, true);
   req.session.regenerate((err) => {
     if (err) return res.status(500).json({ error: 'could not start session' });
     req.session.authenticated = true;
     req.session.username = auth.username;
+    applySessionLength(req, remember);
     res.json({ ok: true, username: auth.username });
+  });
+});
+
+app.post('/api/auth/recover', async (req, res) => {
+  if (!auth) {
+    return res.status(409).json({ error: 'setup not completed' });
+  }
+  const ip = req.ip;
+  if (tooManyAttempts('recover', ip)) {
+    return res.status(429).json({ error: 'too many attempts, try again later' });
+  }
+
+  const { username, recoveryCode, newPassword, confirmNewPassword, remember } = req.body || {};
+  const providedUsername = typeof username === 'string' ? username.trim() : '';
+  const providedCode = typeof recoveryCode === 'string' ? recoveryCode.trim().toUpperCase() : '';
+
+  const usernameMatches = providedUsername === auth.username;
+  const hashToCheck = (usernameMatches && auth.recoveryCodeHash) ? auth.recoveryCodeHash : DUMMY_HASH;
+  const codeMatches = await bcrypt.compare(providedCode, hashToCheck).catch(() => false);
+
+  if (!usernameMatches || !codeMatches) {
+    recordAttempt('recover', ip, false);
+    return res.status(401).json({ error: 'invalid username or recovery code' });
+  }
+  if (typeof newPassword !== 'string' || newPassword.length < 8) {
+    return res.status(400).json({ error: 'new password must be at least 8 characters' });
+  }
+  if (newPassword !== confirmNewPassword) {
+    return res.status(400).json({ error: 'new passwords do not match' });
+  }
+
+  recordAttempt('recover', ip, true);
+  auth.passwordHash = await bcrypt.hash(newPassword, 12);
+  // rotate the recovery code so the one just used can't be reused
+  const newRecoveryCode = generateRecoveryCode();
+  auth.recoveryCodeHash = await bcrypt.hash(newRecoveryCode, 12);
+  try {
+    saveAuth(auth);
+  } catch (err) {
+    return res.status(500).json({ error: `could not save new password: ${err.message}` });
+  }
+
+  req.session.regenerate((err) => {
+    if (err) return res.status(500).json({ error: 'could not start session' });
+    req.session.authenticated = true;
+    req.session.username = auth.username;
+    applySessionLength(req, remember);
+    res.json({ ok: true, username: auth.username, recoveryCode: newRecoveryCode });
   });
 });
 
@@ -240,6 +324,27 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
     return res.status(500).json({ error: `could not save new password: ${err.message}` });
   }
   res.json({ ok: true });
+});
+
+app.post('/api/auth/recovery-code/regenerate', requireAuth, async (req, res) => {
+  const { currentPassword } = req.body || {};
+  const currentMatches = await bcrypt.compare(
+    typeof currentPassword === 'string' ? currentPassword : '',
+    auth.passwordHash
+  ).catch(() => false);
+
+  if (!currentMatches) {
+    return res.status(401).json({ error: 'current password is incorrect' });
+  }
+
+  const recoveryCode = generateRecoveryCode();
+  auth.recoveryCodeHash = await bcrypt.hash(recoveryCode, 12);
+  try {
+    saveAuth(auth);
+  } catch (err) {
+    return res.status(500).json({ error: `could not save new recovery code: ${err.message}` });
+  }
+  res.json({ ok: true, recoveryCode });
 });
 
 // ---- containers: auto-detected from the Docker socket, no config needed ----
