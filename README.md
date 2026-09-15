@@ -14,6 +14,15 @@ It automatically discovers running containers, displays system statistics, and p
 
 ---
 
+## 🔐 Login
+
+Pinnule is gated behind a single local admin account.
+
+* **First run**: opening Pinnule for the first time shows a setup screen — pick a username and password (min. 8 characters) and confirm the password. That becomes the one account for the dashboard.
+* **After that**: you'll see a normal login screen. Sessions last 30 days of activity and are stored server-side, so a container restart doesn't force a re-login.
+* Credentials are stored as a bcrypt hash in `auth.json` on the `pinnule_data` volume (see [Persistent application data](#persistent-application-data)) — never in plain text, never in the image, never in git.
+* There's a logout button (next to the gear icon) once you're signed in.
+
 ## ✨ Features
 
 ### 🐳 Automatic container discovery
@@ -111,7 +120,7 @@ volumes:
   - pinnule_data:/app/data
 ```
 
-The volume stores server-side configuration such as custom container URL overrides.
+The volume stores server-side configuration such as custom container URL overrides, plus the login account (`auth.json`, bcrypt-hashed password) and the session signing secret (`session-secret.txt`).
 
 Because the data is stored in a Docker volume, custom links survive:
 

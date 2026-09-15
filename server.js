@@ -1,7 +1,10 @@
 const os = require('os');
 const fs = require('fs');
+const crypto = require('crypto');
 const path = require('path');
 const express = require('express');
+const session = require('express-session');
+const bcrypt = require('bcryptjs');
 const Docker = require('dockerode');
 const si = require('systeminformation');
 
@@ -44,9 +47,200 @@ function saveUrlOverrides(overrides) {
 
 let urlOverrides = loadUrlOverrides();
 
+// ---- auth: single local account, credentials + session secret kept on the
+// persisted data volume, never in source control or logs ----
+
+const AUTH_FILE = path.join(DATA_DIR, 'auth.json');
+const SESSION_SECRET_FILE = path.join(DATA_DIR, 'session-secret.txt');
+
+function loadAuth() {
+  try {
+    return JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8'));
+  } catch (e) {
+    return null;
+  }
+}
+
+function saveAuth(auth) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(AUTH_FILE, JSON.stringify(auth, null, 2), { mode: 0o600 });
+  try { fs.chmodSync(AUTH_FILE, 0o600); } catch (e) { /* best effort on some filesystems */ }
+}
+
+function loadOrCreateSessionSecret() {
+  try {
+    return fs.readFileSync(SESSION_SECRET_FILE, 'utf8').trim();
+  } catch (e) {
+    const secret = crypto.randomBytes(48).toString('hex');
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(SESSION_SECRET_FILE, secret, { mode: 0o600 });
+    try { fs.chmodSync(SESSION_SECRET_FILE, 0o600); } catch (e2) { /* best effort */ }
+    return secret;
+  }
+}
+
+let auth = loadAuth();
+const SESSION_SECRET = loadOrCreateSessionSecret();
+
+// very small brute-force guard for the login endpoint, keyed by IP.
+// in-memory only: resets on restart, which is fine for its purpose.
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 10;
+const loginAttempts = new Map();
+
+function tooManyLoginAttempts(ip) {
+  const now = Date.now();
+  const entry = loginAttempts.get(ip);
+  if (!entry || now - entry.firstAttempt > LOGIN_WINDOW_MS) return false;
+  return entry.count >= LOGIN_MAX_ATTEMPTS;
+}
+
+function recordLoginAttempt(ip, succeeded) {
+  const now = Date.now();
+  if (succeeded) {
+    loginAttempts.delete(ip);
+    return;
+  }
+  const entry = loginAttempts.get(ip);
+  if (!entry || now - entry.firstAttempt > LOGIN_WINDOW_MS) {
+    loginAttempts.set(ip, { count: 1, firstAttempt: now });
+  } else {
+    entry.count += 1;
+  }
+}
+
 const app = express();
+app.set('trust proxy', 1); // so secure cookies work correctly if run behind a reverse proxy
 app.use(express.json());
+
+app.use(session({
+  name: 'pinnule.sid',
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  rolling: true,
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: 'auto', // only sent over https when the connection actually is https
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days, refreshed on activity
+  },
+}));
+
 app.use(express.static(path.join(__dirname, 'public')));
+
+function requireAuth(req, res, next) {
+  if (req.session && req.session.authenticated) return next();
+  res.status(401).json({ error: 'not authenticated' });
+}
+
+// ---- auth routes ----
+
+app.get('/api/auth/status', (req, res) => {
+  res.json({
+    setupRequired: !auth,
+    authenticated: !!(req.session && req.session.authenticated),
+    username: auth ? auth.username : null,
+  });
+});
+
+app.post('/api/auth/setup', async (req, res) => {
+  if (auth) {
+    return res.status(409).json({ error: 'setup already completed' });
+  }
+  const { username, password, confirmPassword } = req.body || {};
+  if (typeof username !== 'string' || !username.trim()) {
+    return res.status(400).json({ error: 'username is required' });
+  }
+  if (typeof password !== 'string' || password.length < 8) {
+    return res.status(400).json({ error: 'password must be at least 8 characters' });
+  }
+  if (password !== confirmPassword) {
+    return res.status(400).json({ error: 'passwords do not match' });
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  auth = { username: username.trim(), passwordHash, createdAt: new Date().toISOString() };
+  try {
+    saveAuth(auth);
+  } catch (err) {
+    auth = null;
+    return res.status(500).json({ error: `could not save credentials: ${err.message}` });
+  }
+
+  req.session.regenerate((err) => {
+    if (err) return res.status(500).json({ error: 'could not start session' });
+    req.session.authenticated = true;
+    req.session.username = auth.username;
+    res.json({ ok: true, username: auth.username });
+  });
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  if (!auth) {
+    return res.status(409).json({ error: 'setup not completed' });
+  }
+  const ip = req.ip;
+  if (tooManyLoginAttempts(ip)) {
+    return res.status(429).json({ error: 'too many attempts, try again later' });
+  }
+
+  const { username, password } = req.body || {};
+  const providedUsername = typeof username === 'string' ? username.trim() : '';
+  const providedPassword = typeof password === 'string' ? password : '';
+
+  const usernameMatches = providedUsername === auth.username;
+  // always run bcrypt.compare, even on a username mismatch, against a fixed
+  // dummy hash, so response timing doesn't reveal whether the username exists
+  const hashToCheck = usernameMatches ? auth.passwordHash : '$2a$12$invalidinvalidinvaliduinvalidinvalidinvalidinvalidin';
+  const passwordMatches = await bcrypt.compare(providedPassword, hashToCheck).catch(() => false);
+
+  if (!usernameMatches || !passwordMatches) {
+    recordLoginAttempt(ip, false);
+    return res.status(401).json({ error: 'invalid username or password' });
+  }
+
+  recordLoginAttempt(ip, true);
+  req.session.regenerate((err) => {
+    if (err) return res.status(500).json({ error: 'could not start session' });
+    req.session.authenticated = true;
+    req.session.username = auth.username;
+    res.json({ ok: true, username: auth.username });
+  });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.clearCookie('pinnule.sid');
+    res.json({ ok: true });
+  });
+});
+
+app.post('/api/auth/change-password', requireAuth, async (req, res) => {
+  const { currentPassword, newPassword, confirmNewPassword } = req.body || {};
+  const currentMatches = await bcrypt.compare(
+    typeof currentPassword === 'string' ? currentPassword : '',
+    auth.passwordHash
+  ).catch(() => false);
+
+  if (!currentMatches) {
+    return res.status(401).json({ error: 'current password is incorrect' });
+  }
+  if (typeof newPassword !== 'string' || newPassword.length < 8) {
+    return res.status(400).json({ error: 'new password must be at least 8 characters' });
+  }
+  if (newPassword !== confirmNewPassword) {
+    return res.status(400).json({ error: 'new passwords do not match' });
+  }
+
+  auth.passwordHash = await bcrypt.hash(newPassword, 12);
+  try {
+    saveAuth(auth);
+  } catch (err) {
+    return res.status(500).json({ error: `could not save new password: ${err.message}` });
+  }
+  res.json({ ok: true });
+});
 
 // ---- containers: auto-detected from the Docker socket, no config needed ----
 
@@ -62,7 +256,7 @@ function cpuPercentFromStats(stats) {
   return null;
 }
 
-app.get('/api/containers', async (req, res) => {
+app.get('/api/containers', requireAuth, async (req, res) => {
   try {
     const list = await docker.listContainers({ all: true });
     const others = list.filter(c => {
@@ -156,7 +350,7 @@ function collectHostDisks(allDisks) {
   return [...seen.values()].sort((a, b) => a.mount.localeCompare(b.mount));
 }
 
-app.get('/api/system', async (req, res) => {
+app.get('/api/system', requireAuth, async (req, res) => {
   try {
     const [cpu, cpuData, mem, allDisks, temp, defaultIface] = await Promise.all([
       si.currentLoad(),
@@ -198,7 +392,7 @@ app.get('/api/system', async (req, res) => {
 
 // ---- container controls ----
 
-app.post('/api/containers/:id/start', async (req, res) => {
+app.post('/api/containers/:id/start', requireAuth, async (req, res) => {
   try {
     await docker.getContainer(req.params.id).start();
     res.json({ ok: true });
@@ -207,7 +401,7 @@ app.post('/api/containers/:id/start', async (req, res) => {
   }
 });
 
-app.post('/api/containers/:id/stop', async (req, res) => {
+app.post('/api/containers/:id/stop', requireAuth, async (req, res) => {
   try {
     await docker.getContainer(req.params.id).stop();
     res.json({ ok: true });
@@ -218,7 +412,7 @@ app.post('/api/containers/:id/stop', async (req, res) => {
 
 // ---- custom app URLs (keyed by container name, persisted to disk) ----
 
-app.put('/api/containers/:name/url', (req, res) => {
+app.put('/api/containers/:name/url', requireAuth, (req, res) => {
   const name = req.params.name;
   const url = (req.body && typeof req.body.url === 'string') ? req.body.url.trim() : '';
   if (!url) {
@@ -233,7 +427,7 @@ app.put('/api/containers/:name/url', (req, res) => {
   res.json({ ok: true, name, url });
 });
 
-app.delete('/api/containers/:name/url', (req, res) => {
+app.delete('/api/containers/:name/url', requireAuth, (req, res) => {
   const name = req.params.name;
   delete urlOverrides[name];
   try {

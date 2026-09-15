@@ -395,6 +395,10 @@ async function pollOnce() {
       fetch('/api/system'),
       fetch('/api/containers'),
     ]);
+    if (sysRes.status === 401 || containersRes.status === 401) {
+      if (window.pinnuleAuth) window.pinnuleAuth.handleSessionExpired();
+      return;
+    }
     if (!sysRes.ok || !containersRes.ok) throw new Error('request failed');
 
     const sys = await sysRes.json();
@@ -480,8 +484,20 @@ function initSettingsUI() {
 }
 
 // ---------- boot ----------
+// The dashboard only starts polling once auth.js confirms the user is
+// logged in — it calls window.pinnuleStart() after that check succeeds.
 
-initSettingsUI();
-tickClock();
-setInterval(tickClock, 1000);
-restartPolling();
+function startApp() {
+  initSettingsUI();
+  tickClock();
+  setInterval(tickClock, 1000);
+  restartPolling();
+}
+
+function stopApp() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = null;
+}
+
+window.pinnuleStart = startApp;
+window.pinnuleStop = stopApp;
