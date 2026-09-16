@@ -13,6 +13,7 @@ const si = require('systeminformation');
 
 const PORT = process.env.PORT || 4000;
 const HTTPS_PORT = process.env.HTTPS_PORT || 4443;
+const PACKAGE_VERSION = require('./package.json').version;
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
 // ---- figure out our own container id, so we can hide ourselves from the list ----
@@ -225,13 +226,14 @@ app.get('/api/auth/status', (req, res) => {
   if (isSessionExpired(req)) {
     return req.session.destroy(() => {
       res.clearCookie('pinnule.sid');
-      res.json({ setupRequired: !auth, authenticated: false, username: auth ? auth.username : null });
+      res.json({ setupRequired: !auth, authenticated: false, username: auth ? auth.username : null, version: PACKAGE_VERSION });
     });
   }
   res.json({
     setupRequired: !auth,
     authenticated: !!(req.session && req.session.authenticated),
     username: auth ? auth.username : null,
+    version: PACKAGE_VERSION,
   });
 });
 

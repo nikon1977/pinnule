@@ -17,6 +17,7 @@ const pinnuleAuth = (() => {
   const forgotLink = document.getElementById('auth-forgot-link');
   const backLink = document.getElementById('auth-back-link');
   const logoutBtn = document.getElementById('logout-btn');
+  const versionEl = document.getElementById('app-version');
 
   const recoveryView = document.getElementById('auth-recovery-view');
   const recoveryCodeDisplay = document.getElementById('auth-recovery-code-display');
@@ -77,6 +78,7 @@ const pinnuleAuth = (() => {
     document.body.classList.add('auth-pending');
     overlay.hidden = false;
     logoutBtn.hidden = true;
+    versionEl.hidden = true;
     if (window.pinnuleStop) window.pinnuleStop();
     requestAnimationFrame(() => usernameInput.focus());
   }
@@ -85,6 +87,7 @@ const pinnuleAuth = (() => {
     overlay.hidden = true;
     document.body.classList.remove('auth-pending');
     logoutBtn.hidden = false;
+    versionEl.hidden = false;
   }
 
   function showRecoveryCode(code, onContinue) {
@@ -105,6 +108,7 @@ const pinnuleAuth = (() => {
     try {
       const res = await fetch('/api/auth/status');
       const data = await res.json();
+      if (data.version) versionEl.textContent = 'v' + data.version;
       if (data.authenticated) {
         closeOverlay();
         if (window.pinnuleStart) window.pinnuleStart();

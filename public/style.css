@@ -50,6 +50,7 @@ html, body {
 }
 
 .bar-sub { color: var(--text-dim); font-size: 12px; }
+.bar-version { color: var(--text-dim); font-size: 12px; }
 
 .dot {
   width: 7px;
