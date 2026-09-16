@@ -255,13 +255,17 @@ function renderContainers(list) {
         </div>
       </div>` : '';
 
-    let actionBtn = '';
+    let actionBtns = '';
     if (c.state === 'running') {
-      actionBtn = `<button class="c-btn c-btn--stop" data-action="stop" data-id="${c.id}" data-name="${c.name}">stop</button>`;
+      actionBtns = `
+        <div class="c-actions">
+          <button class="c-btn c-btn--restart" data-action="restart" data-id="${c.id}" data-name="${c.name}">restart</button>
+          <button class="c-btn c-btn--stop" data-action="stop" data-id="${c.id}" data-name="${c.name}">stop</button>
+        </div>`;
     } else if (c.state === 'exited' || c.state === 'created' || c.state === 'dead') {
-      actionBtn = `<button class="c-btn c-btn--start" data-action="start" data-id="${c.id}" data-name="${c.name}">start</button>`;
+      actionBtns = `<button class="c-btn c-btn--start" data-action="start" data-id="${c.id}" data-name="${c.name}">start</button>`;
     } else {
-      actionBtn = `<span class="c-btn c-btn--disabled">${c.state}\u2026</span>`;
+      actionBtns = `<span class="c-btn c-btn--disabled">${c.state}\u2026</span>`;
     }
 
     const autoUrl = c.autoUrl != null ? c.autoUrl : c.appUrl;
@@ -312,7 +316,7 @@ function renderContainers(list) {
         <div class="c-card-head">
           <span class="dot ${dotClass(c.state)}"></span>
           ${nameHtml}
-          ${actionBtn}
+          ${actionBtns}
         </div>
         <div class="c-image" title="${escapeHtml(c.image)}">${escapeHtml(c.image)}</div>
         <div class="c-status">${escapeHtml(c.status)}</div>
@@ -327,7 +331,7 @@ function renderContainers(list) {
 async function controlContainer(id, action, btn) {
   const original = btn.textContent;
   btn.disabled = true;
-  btn.textContent = action === 'start' ? 'starting\u2026' : 'stopping\u2026';
+  btn.textContent = action === 'start' ? 'starting\u2026' : action === 'restart' ? 'restarting\u2026' : 'stopping\u2026';
   try {
     const res = await fetch(`/api/containers/${id}/${action}`, { method: 'POST' });
     if (!res.ok) {
@@ -346,7 +350,7 @@ document.getElementById('container-grid').addEventListener('click', (e) => {
   const startStopBtn = e.target.closest('.c-btn[data-action]');
   if (startStopBtn) {
     const { action, id, name } = startStopBtn.dataset;
-    if (action === 'stop' && !confirm(`Stop ${name}?`)) return;
+    if ((action === 'stop' || action === 'restart') && !confirm(`${action === 'stop' ? 'Stop' : 'Restart'} ${name}?`)) return;
     controlContainer(id, action, startStopBtn);
     return;
   }

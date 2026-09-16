@@ -574,6 +574,15 @@ app.post('/api/containers/:id/stop', requireAuth, async (req, res) => {
   }
 });
 
+app.post('/api/containers/:id/restart', requireAuth, async (req, res) => {
+  try {
+    await docker.getContainer(req.params.id).restart();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---- custom app URLs (keyed by container name, persisted to disk) ----
 
 app.put('/api/containers/:name/url', requireAuth, (req, res) => {

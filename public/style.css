@@ -318,6 +318,12 @@ a.c-name-link:hover { color: var(--accent); }
 .c-edit-save:hover { color: var(--good); border-color: var(--good); }
 .c-edit-cancel:hover { color: var(--bad); border-color: var(--bad); }
 
+.c-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .c-btn {
   font-family: var(--mono);
   font-size: 10.5px;
@@ -332,6 +338,7 @@ a.c-name-link:hover { color: var(--accent); }
 }
 .c-btn--stop:hover { color: var(--bad); border-color: var(--bad); }
 .c-btn--start:hover { color: var(--good); border-color: var(--good); }
+.c-btn--restart:hover { color: var(--warn); border-color: var(--warn); }
 .c-btn:disabled { opacity: 0.5; cursor: default; }
 .c-btn--disabled {
   font-size: 10.5px;
