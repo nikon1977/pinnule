@@ -11,14 +11,12 @@ It automatically discovers running containers, displays system statistics, and p
 ![Pinnule dashboard](screenshots/pinnule.png)
 
 > **Built entirely through vibe coding with multiple AI agents.**
->
-> It's very much a work in progress, but it's already fully functional and useful.
 
 ---
 
 ## 🔐 Login
 
-Pinnule is gated behind a single local admin account.
+Pinnule is gated behind a seld-signed certificate and a single local admin account.
 
 * **First run**: opening Pinnule for the first time shows a setup screen — pick a username and password (min. 8 characters) and confirm the password. That becomes the one account for the dashboard. Right after, you'll be shown a **recovery code** once — save it somewhere safe, it's the only way back in if you forget your password.
 * **After that**: you'll see a normal login screen. A "keep me signed in on this device" checkbox controls session length — checked gives you a 30-day session that renews with activity; unchecked gives a short 8-hour session, useful for a shared or kiosk-style screen you don't want to stay logged into.
@@ -164,15 +162,15 @@ If an icon cannot be found, it is hidden cleanly rather than leaving a broken-im
 
 ## 🎮 Controlling containers
 
-Each container card includes a start/stop control.
+Each container card includes a stop/start and restart control.
 
 ### Start
 
 Starting a container happens immediately.
 
-### Stop
+### Stop / Restart
 
-Stopping a container requires confirmation because it can interrupt a running application.
+Stopping and restarting a container requires confirmation because it can interrupt a running application.
 
 The container name itself is also clickable when an application URL can be determined.
 
