@@ -393,6 +393,26 @@ function cpuPercentFromStats(stats) {
   return null;
 }
 
+// When a container publishes several ports, just taking whichever one
+// Docker happened to list first often picks the wrong one (a metrics or
+// API port ahead of the real web UI). Prefer a match against the
+// container's private/internal port, since that's what the app itself is
+// actually bound to, and only fall back to "first listed" when nothing
+// here matches.
+const PREFERRED_WEB_PORTS = [
+  80, 443, 8080, 8443, 3000, 5000, 8081, 8888, 9000, 9090,
+  8096, 8123, 32400, 5055, 19999, 8006, 81,
+];
+
+function pickAppPort(ports) {
+  if (!ports.length) return null;
+  for (const preferred of PREFERRED_WEB_PORTS) {
+    const match = ports.find(p => p.private === preferred);
+    if (match) return match;
+  }
+  return ports[0];
+}
+
 // inspect() returns labels/restart count/start time — data that barely
 // changes between polls — but was being re-fetched from the Docker API for
 // every container on every poll cycle. Cache it briefly per container id
@@ -454,7 +474,8 @@ app.get('/api/containers', requireAuth, async (req, res) => {
       const ports = (c.Ports || []).filter(p => p.PublicPort).map(p => ({
         public: p.PublicPort, private: p.PrivatePort, protocol: p.Type || 'tcp'
       }));
-      const autoUrl = ports.length ? `http://${req.hostname}:${ports[0].public}` : null;
+      const appPort = pickAppPort(ports);
+      const autoUrl = appPort ? `http://${req.hostname}:${appPort.public}` : null;
       const labelUrl = labels['pinnule.url'] || autoUrl;
       const hasOverride = Object.prototype.hasOwnProperty.call(urlOverrides, name);
       const appUrl = hasOverride ? urlOverrides[name] : labelUrl;
