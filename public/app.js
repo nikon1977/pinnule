@@ -455,12 +455,39 @@ function initSettingsUI() {
   const stoppedCheckbox = document.getElementById('opt-show-stopped');
   const metricCheckboxes = document.querySelectorAll('input[data-metric]');
 
+  // The "current password" reauth fields look like an ordinary login field
+  // to the browser, so it'll happily autofill a saved password into them —
+  // which would let anyone with the tab open (kiosk screen, borrowed
+  // device) submit a password change without ever knowing the real
+  // password themselves. Keep them readonly until a human deliberately
+  // clicks in, and wipe both security forms every time the panel opens or
+  // closes so nothing lingers for the next person to find pre-filled.
+  const reauthInputs = document.querySelectorAll('#cp-current, #rc-current');
+  reauthInputs.forEach(input => {
+    input.addEventListener('focus', () => input.removeAttribute('readonly'));
+  });
+
+  function resetReauthForms() {
+    document.getElementById('change-password-form').reset();
+    document.getElementById('regen-code-form').reset();
+    document.getElementById('cp-status').hidden = true;
+    document.getElementById('rc-status').hidden = true;
+    document.getElementById('rc-code-display').hidden = true;
+    reauthInputs.forEach(input => input.setAttribute('readonly', ''));
+  }
+
   intervalSelect.value = String(settings.interval);
   stoppedCheckbox.checked = settings.showStopped;
   metricCheckboxes.forEach(cb => { cb.checked = !!settings.metrics[cb.dataset.metric]; });
 
-  toggleBtn.addEventListener('click', () => { panel.hidden = !panel.hidden; });
-  closeBtn.addEventListener('click', () => { panel.hidden = true; });
+  toggleBtn.addEventListener('click', () => {
+    panel.hidden = !panel.hidden;
+    resetReauthForms();
+  });
+  closeBtn.addEventListener('click', () => {
+    panel.hidden = true;
+    resetReauthForms();
+  });
 
   intervalSelect.addEventListener('change', () => {
     settings.interval = Number(intervalSelect.value);

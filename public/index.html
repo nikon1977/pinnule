@@ -120,7 +120,7 @@
     <div class="settings-label">security</div>
 
     <form id="change-password-form" class="mini-form">
-      <input type="password" id="cp-current" placeholder="current password" autocomplete="current-password" required>
+      <input type="password" id="cp-current" placeholder="current password" autocomplete="current-password" readonly required>
       <input type="password" id="cp-new" placeholder="new password" autocomplete="new-password" required>
       <input type="password" id="cp-confirm" placeholder="confirm new password" autocomplete="new-password" required>
       <button type="submit" class="mini-btn">change password</button>
@@ -128,7 +128,7 @@
     </form>
 
     <form id="regen-code-form" class="mini-form">
-      <input type="password" id="rc-current" placeholder="current password" autocomplete="current-password" required>
+      <input type="password" id="rc-current" placeholder="current password" autocomplete="current-password" readonly required>
       <button type="submit" class="mini-btn">new recovery code</button>
       <div id="rc-status" class="mini-status" hidden></div>
       <div id="rc-code-display" class="auth-recovery-code auth-recovery-code--small" hidden></div>
