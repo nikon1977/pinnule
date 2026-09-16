@@ -465,16 +465,17 @@ body.auth-pending main {
   inset: 0;
   z-index: 100;
   display: flex;
-  align-items: center;
   justify-content: center;
   background: var(--bg);
   padding: 20px;
+  overflow-y: auto;
 }
 .auth-overlay[hidden] { display: none; }
 
 .auth-card {
   width: 100%;
   max-width: 300px;
+  margin: auto 0;
   border: 1px solid var(--border);
   background: var(--panel);
   border-radius: 6px;
