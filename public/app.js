@@ -316,12 +316,12 @@ function renderContainers(list) {
         <div class="c-card-head">
           <span class="dot ${dotClass(c.state)}"></span>
           ${nameHtml}
-          ${actionBtns}
         </div>
         <div class="c-image" title="${escapeHtml(c.image)}">${escapeHtml(c.image)}</div>
         <div class="c-status">${escapeHtml(c.status)}</div>
         ${metaBlock}
         ${statsBlock}
+        <div class="c-card-foot">${actionBtns}</div>
       </div>`;
   }).join('');
 }

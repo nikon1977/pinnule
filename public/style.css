@@ -324,6 +324,14 @@ a.c-name-link:hover { color: var(--accent); }
   flex-shrink: 0;
 }
 
+.c-card-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+
 .c-btn {
   font-family: var(--mono);
   font-size: 10.5px;
