@@ -2,6 +2,9 @@ const os = require('os');
 const fs = require('fs');
 const crypto = require('crypto');
 const path = require('path');
+const http = require('http');
+const https = require('https');
+const { execSync } = require('child_process');
 const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
@@ -9,6 +12,7 @@ const Docker = require('dockerode');
 const si = require('systeminformation');
 
 const PORT = process.env.PORT || 4000;
+const HTTPS_PORT = process.env.HTTPS_PORT || 4443;
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
 // ---- figure out our own container id, so we can hide ourselves from the list ----
@@ -31,6 +35,34 @@ const SELF_NAME = 'pinnule'; // matches container_name in docker-compose.yml, us
 
 const DATA_DIR = process.env.DATA_DIR || '/app/data';
 const OVERRIDES_FILE = path.join(DATA_DIR, 'url-overrides.json');
+
+// ---- self-signed TLS certificate, generated once and kept in the data
+// volume so it survives container restarts/recreations (otherwise a fresh
+// cert on every restart would make the browser re-show the "not trusted"
+// warning every time, even after you'd already told it to trust pinnule) ----
+
+const TLS_DIR = path.join(DATA_DIR, 'tls');
+const TLS_KEY_FILE = path.join(TLS_DIR, 'key.pem');
+const TLS_CERT_FILE = path.join(TLS_DIR, 'cert.pem');
+
+function ensureTlsCert() {
+  if (fs.existsSync(TLS_KEY_FILE) && fs.existsSync(TLS_CERT_FILE)) {
+    return { key: fs.readFileSync(TLS_KEY_FILE), cert: fs.readFileSync(TLS_CERT_FILE) };
+  }
+  fs.mkdirSync(TLS_DIR, { recursive: true });
+  try {
+    execSync(
+      `openssl req -x509 -nodes -days 3650 -newkey rsa:2048 ` +
+      `-keyout "${TLS_KEY_FILE}" -out "${TLS_CERT_FILE}" -subj "/CN=pinnule"`,
+      { stdio: 'ignore' }
+    );
+  } catch (err) {
+    console.error('Could not generate a self-signed TLS certificate (is openssl installed in the image?):', err.message);
+    process.exit(1);
+  }
+  try { fs.chmodSync(TLS_KEY_FILE, 0o600); } catch (e) { /* best effort on some filesystems */ }
+  return { key: fs.readFileSync(TLS_KEY_FILE), cert: fs.readFileSync(TLS_CERT_FILE) };
+}
 
 function loadUrlOverrides() {
   try {
@@ -632,6 +664,19 @@ app.delete('/api/containers/:name/url', requireAuth, (req, res) => {
   res.json({ ok: true, name });
 });
 
-app.listen(PORT, () => {
-  console.log(`pinnule listening on :${PORT}`);
+const tlsOptions = ensureTlsCert();
+
+https.createServer(tlsOptions, app).listen(HTTPS_PORT, () => {
+  console.log(`pinnule listening on :${HTTPS_PORT} (https, self-signed cert)`);
+});
+
+// plain HTTP no longer serves the app directly -- it only redirects to the
+// HTTPS port, so the login password is never sent in cleartext, while old
+// bookmarks/links to the http port still land somewhere useful
+http.createServer((req, res) => {
+  const host = (req.headers.host || '').split(':')[0];
+  res.writeHead(301, { Location: `https://${host}:${HTTPS_PORT}${req.url}` });
+  res.end();
+}).listen(PORT, () => {
+  console.log(`pinnule redirecting :${PORT} -> :${HTTPS_PORT} (http)`);
 });

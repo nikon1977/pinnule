@@ -225,14 +225,18 @@ Docker will automatically pull the latest Pinnule image from GitHub Container Re
 Once the container has started, open:
 
 ```text
-http://SERVER-IP:4000
+https://SERVER-IP:4443
 ```
 
 For example:
 
 ```text
-http://192.168.1.230:4000
+https://192.168.1.230:4443
 ```
+
+Pinnule serves itself over HTTPS with a self-signed certificate it generates on first run (and reuses on every restart after that, so your browser's "trust this certificate" exception keeps working). Your browser will warn that the certificate isn't from a recognized authority the first time you connect — that's expected for a self-signed cert on a LAN-only app; proceed past the warning the same way you would for any other self-signed service on your network.
+
+The old plain-HTTP address (`http://SERVER-IP:4000`) still works, but only redirects to the HTTPS address above — it no longer serves the app directly, so your login password is never sent unencrypted.
 
 ### Updating Pinnule
 
@@ -274,9 +278,9 @@ Host networking allows Pinnule to see the real network interface and therefore r
 
 ### The trade-off
 
-Pinnule binds directly to port `4000` on the Docker host.
+Pinnule binds directly to port `4443` (HTTPS) and `4000` (HTTP, redirect-only) on the Docker host.
 
-Make sure another application isn't already using that port.
+Make sure other applications aren't already using those ports.
 
 ---
 
