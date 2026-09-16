@@ -132,8 +132,26 @@ function generateRecoveryCode() {
 const REMEMBER_SESSION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SHORT_SESSION_MS = 8 * 60 * 60 * 1000; // 8 hours, for shared/kiosk screens
 
+// The session middleware below uses `rolling: true`, which re-arms
+// cookie.maxAge on every request. That's the point for "remembered"
+// sessions, but it quietly defeats the "short" kiosk session: the dashboard
+// polls the API every few seconds on its own, so a screen left open would
+// never actually go 8 hours without "activity" and would never log out.
+// To keep the short session's promise, non-remembered logins also get an
+// absolute wall-clock deadline that requireAuth enforces regardless of
+// how recently the cookie was touched.
 function applySessionLength(req, remember) {
-  req.session.cookie.maxAge = remember === false ? SHORT_SESSION_MS : REMEMBER_SESSION_MS;
+  if (remember === false) {
+    req.session.cookie.maxAge = SHORT_SESSION_MS;
+    req.session.absoluteExpiresAt = Date.now() + SHORT_SESSION_MS;
+  } else {
+    req.session.cookie.maxAge = REMEMBER_SESSION_MS;
+    delete req.session.absoluteExpiresAt;
+  }
+}
+
+function isSessionExpired(req) {
+  return !!(req.session && req.session.absoluteExpiresAt && Date.now() > req.session.absoluteExpiresAt);
 }
 
 const app = express();
@@ -157,13 +175,27 @@ app.use(session({
 app.use(express.static(path.join(__dirname, 'public')));
 
 function requireAuth(req, res, next) {
-  if (req.session && req.session.authenticated) return next();
+  if (req.session && req.session.authenticated) {
+    if (isSessionExpired(req)) {
+      return req.session.destroy(() => {
+        res.clearCookie('pinnule.sid');
+        res.status(401).json({ error: 'session expired' });
+      });
+    }
+    return next();
+  }
   res.status(401).json({ error: 'not authenticated' });
 }
 
 // ---- auth routes ----
 
 app.get('/api/auth/status', (req, res) => {
+  if (isSessionExpired(req)) {
+    return req.session.destroy(() => {
+      res.clearCookie('pinnule.sid');
+      res.json({ setupRequired: !auth, authenticated: false, username: auth ? auth.username : null });
+    });
+  }
   res.json({
     setupRequired: !auth,
     authenticated: !!(req.session && req.session.authenticated),
@@ -396,10 +428,10 @@ app.get('/api/containers', requireAuth, async (req, res) => {
         public: p.PublicPort, private: p.PrivatePort, protocol: p.Type || 'tcp'
       }));
       const autoUrl = ports.length ? `http://${req.hostname}:${ports[0].public}` : null;
-      const labelUrl = labels['homelab.dashboard.url'] || autoUrl;
+      const labelUrl = labels['pinnule.url'] || autoUrl;
       const hasOverride = Object.prototype.hasOwnProperty.call(urlOverrides, name);
       const appUrl = hasOverride ? urlOverrides[name] : labelUrl;
-      const icon = labels['homelab.dashboard.icon'] || null;
+      const icon = labels['pinnule.icon'] || null;
 
       return {
         id: c.Id.slice(0, 12),
