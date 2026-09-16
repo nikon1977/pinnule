@@ -194,6 +194,22 @@ main { padding: 20px 22px 40px; }
 
 .hw-detail { color: var(--text-dim); font-size: 11px; margin-top: 6px; }
 
+.hw-spark {
+  display: block;
+  width: 100%;
+  height: 22px;
+  margin-top: 8px;
+}
+.hw-spark polyline {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.hw-spark polyline.spark-primary { stroke: var(--accent); }
+.hw-spark polyline.spark-secondary { stroke: var(--text-dim); opacity: 0.8; }
+
 .hw-empty {
   color: var(--text-dim);
   font-size: 12px;

@@ -26,6 +26,18 @@ let pollTimer = null;
 let lastContainers = [];
 let editingName = null;
 
+// rolling sample history for the hardware sparklines — in-memory only,
+// resets on page load, independent of which panels are currently enabled
+// so a re-enabled panel isn't stuck starting from empty
+const HISTORY_MAX = 60;
+const history = { cpu: [], memory: [], netRx: [], netTx: [] };
+
+function pushHistory(key, value) {
+  const arr = history[key];
+  arr.push(value);
+  if (arr.length > HISTORY_MAX) arr.shift();
+}
+
 // ---------- helpers ----------
 
 function fmtBytes(n) {
@@ -86,11 +98,44 @@ function dotClass(state) {
 
 // ---------- rendering: hardware strip ----------
 
+function sparklineSvg(series, { width = 100, height = 24, min = null, max = null } = {}) {
+  const usable = series.filter(s => s.values.length >= 2);
+  if (!usable.length) return '';
+  const allValues = usable.flatMap(s => s.values);
+  const lo = min != null ? min : Math.min(...allValues, 0);
+  const hi = max != null ? max : Math.max(...allValues, lo + 1);
+  const range = (hi - lo) || 1;
+
+  const toPoints = (values) => {
+    const stepX = width / Math.max(values.length - 1, 1);
+    return values.map((v, i) => {
+      const x = i * stepX;
+      const y = height - Math.max(0, Math.min(1, (v - lo) / range)) * height;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+  };
+
+  const polylines = usable
+    .map(s => `<polyline points="${toPoints(s.values)}" class="${s.className || ''}"></polyline>`)
+    .join('');
+
+  return `<svg class="hw-spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${polylines}</svg>`;
+}
+
 function renderHardware(data) {
   const el = document.getElementById('hw-strip');
   if (!data) {
     el.innerHTML = '<div class="hw-empty">hardware stats unavailable</div>';
     return;
+  }
+
+  // record history regardless of which panels are currently shown, so
+  // toggling a panel back on doesn't start its sparkline from empty
+  if (data.cpu && data.cpu.loadPct != null) pushHistory('cpu', data.cpu.loadPct);
+  if (data.memory && data.memory.usedPct != null) pushHistory('memory', data.memory.usedPct);
+  if (data.network) {
+    pushHistory('netRx', data.network.rxSec || 0);
+    pushHistory('netTx', data.network.txSec || 0);
   }
 
   const panels = [];
@@ -102,6 +147,7 @@ function renderHardware(data) {
         <div class="hw-label"><span>CPU</span><span>${data.cpu.cores} cores</span></div>
         <div class="hw-value">${pct != null ? pct.toFixed(1) : '\u2014'}<small>%</small></div>
         <div class="hw-meter"><div class="hw-meter-fill ${meterClass(pct)}" style="width:${Math.min(pct || 0, 100)}%"></div></div>
+        ${sparklineSvg([{ values: history.cpu, className: 'spark-primary' }], { min: 0, max: 100 })}
       </div>`);
   }
 
@@ -112,6 +158,7 @@ function renderHardware(data) {
         <div class="hw-label"><span>MEM</span></div>
         <div class="hw-value">${pct != null ? pct.toFixed(1) : '\u2014'}<small>%</small></div>
         <div class="hw-meter"><div class="hw-meter-fill ${meterClass(pct)}" style="width:${Math.min(pct || 0, 100)}%"></div></div>
+        ${sparklineSvg([{ values: history.memory, className: 'spark-primary' }], { min: 0, max: 100 })}
         <div class="hw-detail">${fmtBytes(data.memory.usedBytes)} / ${fmtBytes(data.memory.totalBytes)}</div>
       </div>`);
   }
@@ -146,6 +193,10 @@ function renderHardware(data) {
           \u2193 ${net ? fmtRate(net.rxSec) : '\u2014'}<br>
           \u2191 ${net ? fmtRate(net.txSec) : '\u2014'}
         </div>
+        ${sparklineSvg([
+          { values: history.netRx, className: 'spark-primary' },
+          { values: history.netTx, className: 'spark-secondary' },
+        ])}
       </div>`);
   }
 
