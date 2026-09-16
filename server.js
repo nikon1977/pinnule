@@ -393,6 +393,28 @@ function cpuPercentFromStats(stats) {
   return null;
 }
 
+// inspect() returns labels/restart count/start time — data that barely
+// changes between polls — but was being re-fetched from the Docker API for
+// every container on every poll cycle. Cache it briefly per container id
+// instead; entries for containers that disappear (removed/recreated) get
+// pruned below so this can't grow unbounded over time.
+const inspectCache = new Map(); // id -> { restartCount, startedAt, labels, fetchedAt }
+const INSPECT_CACHE_TTL_MS = 30 * 1000;
+
+async function getContainerMeta(id, fallbackLabels) {
+  const cached = inspectCache.get(id);
+  if (cached && (Date.now() - cached.fetchedAt) < INSPECT_CACHE_TTL_MS) return cached;
+  const inspect = await docker.getContainer(id).inspect();
+  const meta = {
+    restartCount: inspect.RestartCount || 0,
+    startedAt: inspect.State && inspect.State.StartedAt,
+    labels: (inspect.Config && inspect.Config.Labels) || fallbackLabels || {},
+    fetchedAt: Date.now(),
+  };
+  inspectCache.set(id, meta);
+  return meta;
+}
+
 app.get('/api/containers', requireAuth, async (req, res) => {
   try {
     const list = await docker.listContainers({ all: true });
@@ -402,16 +424,21 @@ app.get('/api/containers', requireAuth, async (req, res) => {
       return name !== SELF_NAME;
     });
 
+    const currentIds = new Set(others.map(c => c.Id));
+    for (const id of inspectCache.keys()) {
+      if (!currentIds.has(id)) inspectCache.delete(id);
+    }
+
     const enriched = await Promise.all(others.map(async (c) => {
       const name = (c.Names && c.Names[0] || c.Id.slice(0, 12)).replace(/^\//, '');
       let cpuPct = null, memUsed = null, memLimit = null;
       let restartCount = 0, startedAt = null, labels = c.Labels || {};
 
       try {
-        const inspect = await docker.getContainer(c.Id).inspect();
-        restartCount = inspect.RestartCount || 0;
-        startedAt = inspect.State && inspect.State.StartedAt;
-        labels = inspect.Config && inspect.Config.Labels || labels;
+        const meta = await getContainerMeta(c.Id, c.Labels);
+        restartCount = meta.restartCount;
+        startedAt = meta.startedAt;
+        labels = meta.labels;
       } catch (e) { /* container may disappear during polling */ }
 
       if (c.State === 'running') {
