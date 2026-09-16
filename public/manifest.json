@@ -1,0 +1,16 @@
+{
+  "name": "pinnule",
+  "short_name": "pinnule",
+  "description": "Lightweight homelab status dashboard",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#12181c",
+  "theme_color": "#12181c",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
