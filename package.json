@@ -1,6 +1,6 @@
 {
   "name": "pinnule",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "private": true,
   "description": "Lightweight peak homelab status dashboard",
   "main": "server.js",
