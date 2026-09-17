@@ -95,12 +95,18 @@ const pinnuleAuth = (() => {
     recoveryView.hidden = false;
     recoveryCodeDisplay.textContent = code;
     pendingContinue = onContinue;
+    // the password that got us here has already done its job server-side;
+    // no reason for it to keep sitting in the DOM readable via devtools
+    passwordInput.value = '';
+    confirmInput.value = '';
+    codeInput.value = '';
     requestAnimationFrame(() => recoveryContinueBtn.focus());
   }
 
   recoveryContinueBtn.addEventListener('click', () => {
     const cb = pendingContinue;
     pendingContinue = null;
+    recoveryCodeDisplay.textContent = '';
     if (cb) cb();
   });
 
@@ -186,6 +192,7 @@ const pinnuleAuth = (() => {
         });
       } else {
         await postJson('/api/auth/login', { username, password, remember });
+        passwordInput.value = '';
         closeOverlay();
         if (window.pinnuleStart) window.pinnuleStart();
       }
@@ -209,6 +216,7 @@ const pinnuleAuth = (() => {
       await fetch('/api/auth/logout', { method: 'POST' });
     } catch (e) { /* proceed to show the login screen regardless */ }
     if (window.pinnuleStop) window.pinnuleStop();
+    rcCodeDisplay.textContent = '';
     openOverlay();
     setMode('login');
   });
@@ -256,6 +264,7 @@ const pinnuleAuth = (() => {
       rcStatus.hidden = true;
       rcStatus.className = 'mini-status';
       rcCodeDisplay.hidden = true;
+      rcCodeDisplay.textContent = '';
 
       try {
         const data = await postJson('/api/auth/recovery-code/regenerate', { currentPassword });
