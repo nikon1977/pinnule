@@ -113,37 +113,44 @@ function loadOrCreateSessionSecret() {
 }
 
 let auth = loadAuth();
+
+// sessions carry the credential epoch that was current when they were
+// issued. Bumping it on password change/recovery invalidates every other
+// session transparently -- requireAuth just stops accepting the old
+// epoch -- without needing to enumerate or touch the session store itself.
+function currentCredentialEpoch() {
+  return (auth && auth.credentialEpoch) || 1;
+}
 const SESSION_SECRET = loadOrCreateSessionSecret();
 
 // very small brute-force guard for login and account-recovery attempts,
 // keyed by "type:ip". in-memory only: resets on restart, which is fine for
 // its purpose.
+//
+// reserveAttempt() checks the bucket AND increments it in one synchronous
+// step -- no `await` in between -- so a burst of concurrent requests can't
+// all read the same pre-increment count before any of them get recorded.
+// The previous check-then-record-after-bcrypt shape had exactly that gap.
 const RATE_WINDOW_MS = 15 * 60 * 1000;
 const RATE_MAX_ATTEMPTS = 10;
 const attemptTracker = new Map();
 const DUMMY_HASH = '$2a$12$./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxy'; // fixed 60-char bcrypt-shaped hash used to equalize compare() timing when the real target doesn't exist
 
-function tooManyAttempts(type, ip) {
+function reserveAttempt(type, ip) {
   const key = `${type}:${ip}`;
   const now = Date.now();
   const entry = attemptTracker.get(key);
-  if (!entry || now - entry.firstAttempt > RATE_WINDOW_MS) return false;
-  return entry.count >= RATE_MAX_ATTEMPTS;
+  if (entry && now - entry.firstAttempt <= RATE_WINDOW_MS) {
+    if (entry.count >= RATE_MAX_ATTEMPTS) return false;
+    entry.count += 1;
+    return true;
+  }
+  attemptTracker.set(key, { count: 1, firstAttempt: now });
+  return true;
 }
 
-function recordAttempt(type, ip, succeeded) {
-  const key = `${type}:${ip}`;
-  const now = Date.now();
-  if (succeeded) {
-    attemptTracker.delete(key);
-    return;
-  }
-  const entry = attemptTracker.get(key);
-  if (!entry || now - entry.firstAttempt > RATE_WINDOW_MS) {
-    attemptTracker.set(key, { count: 1, firstAttempt: now });
-  } else {
-    entry.count += 1;
-  }
+function clearAttempts(type, ip) {
+  attemptTracker.delete(`${type}:${ip}`);
 }
 
 // recovery codes: shown once at setup (and once each time they're used /
@@ -187,8 +194,22 @@ function isSessionExpired(req) {
   return !!(req.session && req.session.absoluteExpiresAt && Date.now() > req.session.absoluteExpiresAt);
 }
 
+// A session that predates the last password change/recovery carries a
+// credential epoch older than the current one -- treat it the same as an
+// expired session so a compromised session can't outlive a password reset.
+function isSessionInvalid(req) {
+  if (isSessionExpired(req)) return true;
+  return !!(req.session && req.session.authenticated && req.session.credentialEpoch !== currentCredentialEpoch());
+}
+
 const app = express();
-app.set('trust proxy', 1); // so secure cookies work correctly if run behind a reverse proxy
+// No `trust proxy` here: the default deployment (network_mode: host, no
+// reverse proxy in front) means there's no upstream to strip incoming
+// X-Forwarded-For headers, so trusting them would let anyone spoof the IP
+// the rate limiter keys on. Secure-cookie detection doesn't need it either
+// now that pinnule serves HTTPS itself (req.secure reflects the real
+// connection). If you do put pinnule behind a real reverse proxy later,
+// trust proxy should be re-added scoped to that proxy's actual address.
 app.use(express.json());
 
 app.use(session({
@@ -207,9 +228,37 @@ app.use(session({
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// CSRF: sameSite:'lax' on the session cookie already blocks the most common
+// cross-site POST vector in modern browsers, but it's the only control in
+// place, and only on the routes that happen to rely on cookies at all. This
+// checks Origin (falling back to Referer) against the request's own Host
+// header for every state-changing request -- deployment-agnostic, since
+// pinnule might be reached via different hostnames/IPs on the LAN, so there's
+// no single "correct" origin to hardcode. Applies globally rather than
+// per-route so it covers every current and future POST/PUT/DELETE endpoint,
+// not just the container lifecycle ones.
+function requireSameOrigin(req, res, next) {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+  const originHeader = req.headers.origin || req.headers.referer;
+  if (!originHeader) {
+    return res.status(403).json({ error: 'missing origin' });
+  }
+  let originHost;
+  try {
+    originHost = new URL(originHeader).host;
+  } catch (e) {
+    return res.status(403).json({ error: 'invalid origin' });
+  }
+  if (originHost !== req.headers.host) {
+    return res.status(403).json({ error: 'cross-origin request blocked' });
+  }
+  next();
+}
+app.use(requireSameOrigin);
+
 function requireAuth(req, res, next) {
   if (req.session && req.session.authenticated) {
-    if (isSessionExpired(req)) {
+    if (isSessionInvalid(req)) {
       return req.session.destroy(() => {
         res.clearCookie('pinnule.sid');
         res.status(401).json({ error: 'session expired' });
@@ -223,7 +272,7 @@ function requireAuth(req, res, next) {
 // ---- auth routes ----
 
 app.get('/api/auth/status', (req, res) => {
-  if (isSessionExpired(req)) {
+  if (isSessionInvalid(req)) {
     return req.session.destroy(() => {
       res.clearCookie('pinnule.sid');
       res.json({ setupRequired: !auth, authenticated: false, username: auth ? auth.username : null, version: PACKAGE_VERSION });
@@ -259,6 +308,7 @@ app.post('/api/auth/setup', async (req, res) => {
     username: username.trim(),
     passwordHash,
     recoveryCodeHash,
+    credentialEpoch: 1,
     createdAt: new Date().toISOString(),
   };
   try {
@@ -272,6 +322,7 @@ app.post('/api/auth/setup', async (req, res) => {
     if (err) return res.status(500).json({ error: 'could not start session' });
     req.session.authenticated = true;
     req.session.username = auth.username;
+    req.session.credentialEpoch = currentCredentialEpoch();
     applySessionLength(req, remember);
     res.json({ ok: true, username: auth.username, recoveryCode });
   });
@@ -282,7 +333,7 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(409).json({ error: 'setup not completed' });
   }
   const ip = req.ip;
-  if (tooManyAttempts('login', ip)) {
+  if (!reserveAttempt('login', ip)) {
     return res.status(429).json({ error: 'too many attempts, try again later' });
   }
 
@@ -297,15 +348,15 @@ app.post('/api/auth/login', async (req, res) => {
   const passwordMatches = await bcrypt.compare(providedPassword, hashToCheck).catch(() => false);
 
   if (!usernameMatches || !passwordMatches) {
-    recordAttempt('login', ip, false);
     return res.status(401).json({ error: 'invalid username or password' });
   }
 
-  recordAttempt('login', ip, true);
+  clearAttempts('login', ip);
   req.session.regenerate((err) => {
     if (err) return res.status(500).json({ error: 'could not start session' });
     req.session.authenticated = true;
     req.session.username = auth.username;
+    req.session.credentialEpoch = currentCredentialEpoch();
     applySessionLength(req, remember);
     res.json({ ok: true, username: auth.username });
   });
@@ -316,7 +367,7 @@ app.post('/api/auth/recover', async (req, res) => {
     return res.status(409).json({ error: 'setup not completed' });
   }
   const ip = req.ip;
-  if (tooManyAttempts('recover', ip)) {
+  if (!reserveAttempt('recover', ip)) {
     return res.status(429).json({ error: 'too many attempts, try again later' });
   }
 
@@ -329,7 +380,6 @@ app.post('/api/auth/recover', async (req, res) => {
   const codeMatches = await bcrypt.compare(providedCode, hashToCheck).catch(() => false);
 
   if (!usernameMatches || !codeMatches) {
-    recordAttempt('recover', ip, false);
     return res.status(401).json({ error: 'invalid username or recovery code' });
   }
   if (typeof newPassword !== 'string' || newPassword.length < 8) {
@@ -339,8 +389,12 @@ app.post('/api/auth/recover', async (req, res) => {
     return res.status(400).json({ error: 'new passwords do not match' });
   }
 
-  recordAttempt('recover', ip, true);
+  clearAttempts('recover', ip);
   auth.passwordHash = await bcrypt.hash(newPassword, 12);
+  // account recovery is exactly the "I think someone else has my
+  // credentials" case, so this is the one place that must invalidate every
+  // other session, not just this one
+  auth.credentialEpoch = currentCredentialEpoch() + 1;
   // rotate the recovery code so the one just used can't be reused
   const newRecoveryCode = generateRecoveryCode();
   auth.recoveryCodeHash = await bcrypt.hash(newRecoveryCode, 12);
@@ -354,6 +408,7 @@ app.post('/api/auth/recover', async (req, res) => {
     if (err) return res.status(500).json({ error: 'could not start session' });
     req.session.authenticated = true;
     req.session.username = auth.username;
+    req.session.credentialEpoch = currentCredentialEpoch();
     applySessionLength(req, remember);
     res.json({ ok: true, username: auth.username, recoveryCode: newRecoveryCode });
   });
@@ -384,11 +439,13 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
   }
 
   auth.passwordHash = await bcrypt.hash(newPassword, 12);
+  auth.credentialEpoch = currentCredentialEpoch() + 1;
   try {
     saveAuth(auth);
   } catch (err) {
     return res.status(500).json({ error: `could not save new password: ${err.message}` });
   }
+  req.session.credentialEpoch = currentCredentialEpoch(); // keep this session valid; every other one is now stale
   res.json({ ok: true });
 });
 
@@ -445,6 +502,19 @@ function pickAppPort(ports) {
     if (match) return match;
   }
   return ports[0];
+}
+
+// Docker labels come from whatever image/compose file a container was
+// started with -- not something pinnule controls -- so pinnule.url has to
+// be treated as untrusted input. Only http/https can end up as a link.
+function isSafeAppUrl(url) {
+  if (typeof url !== 'string' || !url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch (e) {
+    return false;
+  }
 }
 
 // inspect() returns labels/restart count/start time — data that barely
@@ -510,7 +580,8 @@ app.get('/api/containers', requireAuth, async (req, res) => {
       }));
       const appPort = pickAppPort(ports);
       const autoUrl = appPort ? `http://${req.hostname}:${appPort.public}` : null;
-      const labelUrl = labels['pinnule.url'] || autoUrl;
+      const rawLabelUrl = labels['pinnule.url'];
+      const labelUrl = (rawLabelUrl && isSafeAppUrl(rawLabelUrl)) ? rawLabelUrl : autoUrl;
       const hasOverride = Object.prototype.hasOwnProperty.call(urlOverrides, name);
       const appUrl = hasOverride ? urlOverrides[name] : labelUrl;
       const icon = labels['pinnule.icon'] || null;
@@ -611,7 +682,18 @@ app.get('/api/system', requireAuth, async (req, res) => {
 
 // ---- container controls ----
 
+// container IDs the app itself hands out are always a 12-char hex prefix
+// (see c.Id.slice(0, 12) below), but accept up to a full 64-char id too.
+// Rejecting anything else here means a crafted :id containing URL-structural
+// characters (?, /, #...) never reaches dockerode's own request building.
+function isValidContainerId(id) {
+  return typeof id === 'string' && /^[a-f0-9]{12,64}$/i.test(id);
+}
+
 app.post('/api/containers/:id/start', requireAuth, async (req, res) => {
+  if (!isValidContainerId(req.params.id)) {
+    return res.status(400).json({ error: 'invalid container id' });
+  }
   try {
     await docker.getContainer(req.params.id).start();
     res.json({ ok: true });
@@ -621,6 +703,9 @@ app.post('/api/containers/:id/start', requireAuth, async (req, res) => {
 });
 
 app.post('/api/containers/:id/stop', requireAuth, async (req, res) => {
+  if (!isValidContainerId(req.params.id)) {
+    return res.status(400).json({ error: 'invalid container id' });
+  }
   try {
     await docker.getContainer(req.params.id).stop();
     res.json({ ok: true });
@@ -630,6 +715,9 @@ app.post('/api/containers/:id/stop', requireAuth, async (req, res) => {
 });
 
 app.post('/api/containers/:id/restart', requireAuth, async (req, res) => {
+  if (!isValidContainerId(req.params.id)) {
+    return res.status(400).json({ error: 'invalid container id' });
+  }
   try {
     await docker.getContainer(req.params.id).restart();
     res.json({ ok: true });
@@ -645,6 +733,9 @@ app.put('/api/containers/:name/url', requireAuth, (req, res) => {
   const url = (req.body && typeof req.body.url === 'string') ? req.body.url.trim() : '';
   if (!url) {
     return res.status(400).json({ error: 'url is required' });
+  }
+  if (!isSafeAppUrl(url)) {
+    return res.status(400).json({ error: 'url must start with http:// or https://' });
   }
   urlOverrides[name] = url;
   try {
