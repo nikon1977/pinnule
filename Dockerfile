@@ -4,8 +4,8 @@
 # never has to exist in the final image at all.
 FROM node:20-alpine AS deps
 WORKDIR /app
-COPY package.json ./
-RUN npm install --omit=dev
+COPY package*.json ./
+RUN npm ci --omit=dev
 
 # ---- final stage: runtime only ----
 FROM node:20-alpine
