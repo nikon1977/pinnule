@@ -1,6 +1,6 @@
 # Pinnule
 
-Current version 1.4.3
+Current version 1.5.0
 
 **A nimble, lightweight dashboard for your homelab.**
 
