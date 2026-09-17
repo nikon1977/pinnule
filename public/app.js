@@ -76,6 +76,19 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+// Server-side already restricts appUrl to http/https, but this is cheap
+// insurance in case that ever changes: never render something like a
+// javascript: URL as a clickable link, whatever produced it.
+function isSafeUrl(url) {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url, window.location.href);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch (e) {
+    return false;
+  }
+}
+
 function appIcon(name, explicit) {
   if (explicit) return explicit;
   const slug = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -169,7 +182,7 @@ function renderHardware(data) {
         const pct = d.usedPct;
         panels.push(`
           <div class="hw-panel">
-            <div class="hw-label"><span>DISK</span><span>${d.mount}</span></div>
+            <div class="hw-label"><span>DISK</span><span>${escapeHtml(d.mount)}</span></div>
             <div class="hw-value">${pct != null ? pct.toFixed(1) : '\u2014'}<small>%</small></div>
             <div class="hw-meter"><div class="hw-meter-fill ${meterClass(pct)}" style="width:${Math.min(pct || 0, 100)}%"></div></div>
             <div class="hw-detail">${fmtBytes(d.usedBytes)} / ${fmtBytes(d.totalBytes)}</div>
@@ -292,8 +305,9 @@ function renderContainers(list) {
           </button>` : ''}
         </form>`;
     } else {
-      const link = appUrl
-        ? `<a class="c-name-link" href="${escapeHtml(appUrl)}" target="_blank" rel="noopener" title="open ${escapeHtml(c.name)}"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.name)}</span></a>`
+      const safeAppUrl = isSafeUrl(appUrl) ? appUrl : null;
+      const link = safeAppUrl
+        ? `<a class="c-name-link" href="${escapeHtml(safeAppUrl)}" target="_blank" rel="noopener" title="open ${escapeHtml(c.name)}"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.name)}</span></a>`
         : `<span class="c-name-link"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.name)}</span></span>`;
       nameHtml = `
         <span class="c-name">
