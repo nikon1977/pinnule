@@ -542,6 +542,7 @@ function initSettingsUI() {
     document.getElementById('cp-status').hidden = true;
     document.getElementById('rc-status').hidden = true;
     document.getElementById('rc-code-display').hidden = true;
+    document.getElementById('rc-code-display').textContent = '';
     reauthInputs.forEach(input => input.setAttribute('readonly', ''));
   }
 

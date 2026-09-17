@@ -32,11 +32,21 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push image
+      - name: Build and push image (main -> latest)
+        if: github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
             ghcr.io/nikon1977/pinnule:latest
+            ghcr.io/nikon1977/pinnule:${{ github.sha }}
+
+      - name: Build and push image (other refs, no latest)
+        if: github.ref != 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
             ghcr.io/nikon1977/pinnule:${{ github.sha }}

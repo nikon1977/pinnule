@@ -114,6 +114,13 @@ function loadOrCreateSessionSecret() {
 
 let auth = loadAuth();
 
+// Setup does two awaited bcrypt.hash() calls before persisting -- a second
+// concurrent request could pass the `if (auth)` check while the first is
+// still mid-hash, and whichever saves last would silently win. This flag is
+// set/checked synchronously (no `await` between the check and the set), so
+// it closes that gap the same way reserveAttempt() does for rate limiting.
+let setupInProgress = false;
+
 // sessions carry the credential epoch that was current when they were
 // issued. Bumping it on password change/recovery invalidates every other
 // session transparently -- requireAuth just stops accepting the old
@@ -287,45 +294,52 @@ app.get('/api/auth/status', (req, res) => {
 });
 
 app.post('/api/auth/setup', async (req, res) => {
-  if (auth) {
+  if (auth || setupInProgress) {
     return res.status(409).json({ error: 'setup already completed' });
   }
-  const { username, password, confirmPassword, remember } = req.body || {};
-  if (typeof username !== 'string' || !username.trim()) {
-    return res.status(400).json({ error: 'username is required' });
-  }
-  if (typeof password !== 'string' || password.length < 8) {
-    return res.status(400).json({ error: 'password must be at least 8 characters' });
-  }
-  if (password !== confirmPassword) {
-    return res.status(400).json({ error: 'passwords do not match' });
-  }
-
-  const passwordHash = await bcrypt.hash(password, 12);
-  const recoveryCode = generateRecoveryCode();
-  const recoveryCodeHash = await bcrypt.hash(recoveryCode, 12);
-  auth = {
-    username: username.trim(),
-    passwordHash,
-    recoveryCodeHash,
-    credentialEpoch: 1,
-    createdAt: new Date().toISOString(),
-  };
+  setupInProgress = true;
   try {
-    saveAuth(auth);
-  } catch (err) {
-    auth = null;
-    return res.status(500).json({ error: `could not save credentials: ${err.message}` });
-  }
+    const { username, password, confirmPassword, remember } = req.body || {};
+    if (typeof username !== 'string' || !username.trim()) {
+      return res.status(400).json({ error: 'username is required' });
+    }
+    if (typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({ error: 'password must be at least 8 characters' });
+    }
+    if (password !== confirmPassword) {
+      return res.status(400).json({ error: 'passwords do not match' });
+    }
 
-  req.session.regenerate((err) => {
-    if (err) return res.status(500).json({ error: 'could not start session' });
-    req.session.authenticated = true;
-    req.session.username = auth.username;
-    req.session.credentialEpoch = currentCredentialEpoch();
-    applySessionLength(req, remember);
-    res.json({ ok: true, username: auth.username, recoveryCode });
-  });
+    const passwordHash = await bcrypt.hash(password, 12);
+    const recoveryCode = generateRecoveryCode();
+    const recoveryCodeHash = await bcrypt.hash(recoveryCode, 12);
+    auth = {
+      username: username.trim(),
+      passwordHash,
+      recoveryCodeHash,
+      credentialEpoch: 1,
+      createdAt: new Date().toISOString(),
+    };
+    try {
+      saveAuth(auth);
+    } catch (err) {
+      auth = null;
+      return res.status(500).json({ error: `could not save credentials: ${err.message}` });
+    }
+
+    req.session.regenerate((err) => {
+      if (err) return res.status(500).json({ error: 'could not start session' });
+      req.session.authenticated = true;
+      req.session.username = auth.username;
+      req.session.credentialEpoch = currentCredentialEpoch();
+      applySessionLength(req, remember);
+      res.json({ ok: true, username: auth.username, recoveryCode });
+    });
+  } finally {
+    // harmless to release even after success: `auth` being set now blocks
+    // any further attempt on its own, via the check at the top of this route
+    setupInProgress = false;
+  }
 });
 
 app.post('/api/auth/login', async (req, res) => {
@@ -345,10 +359,21 @@ app.post('/api/auth/login', async (req, res) => {
   // always run bcrypt.compare, even on a username mismatch, against a fixed
   // dummy hash, so response timing doesn't reveal whether the username exists
   const hashToCheck = usernameMatches ? auth.passwordHash : DUMMY_HASH;
+  // captured before the async gap below: if a password change/recovery
+  // completes while this bcrypt.compare is in flight, hashToCheck is now
+  // stale even though the compare still reports a match against it, and
+  // currentCredentialEpoch() would read the *new* epoch by the time we're
+  // back here -- stamping a session that verified an old password with a
+  // new epoch, defeating the whole point of that epoch existing
+  const epochAtCheckStart = currentCredentialEpoch();
   const passwordMatches = await bcrypt.compare(providedPassword, hashToCheck).catch(() => false);
 
   if (!usernameMatches || !passwordMatches) {
     return res.status(401).json({ error: 'invalid username or password' });
+  }
+  if (auth.passwordHash !== hashToCheck || currentCredentialEpoch() !== epochAtCheckStart) {
+    // credentials changed mid-verification; what we just checked is stale
+    return res.status(401).json({ error: 'credentials changed, please try again' });
   }
 
   clearAttempts('login', ip);
@@ -422,6 +447,11 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.post('/api/auth/change-password', requireAuth, async (req, res) => {
+  // keyed by session, not IP: the threat here is a stolen session cookie
+  // used as an unlimited password-guessing oracle, not a network attacker
+  if (!reserveAttempt('reauth', req.sessionID)) {
+    return res.status(429).json({ error: 'too many attempts, try again later' });
+  }
   const { currentPassword, newPassword, confirmNewPassword } = req.body || {};
   const currentMatches = await bcrypt.compare(
     typeof currentPassword === 'string' ? currentPassword : '',
@@ -438,6 +468,7 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'new passwords do not match' });
   }
 
+  clearAttempts('reauth', req.sessionID);
   auth.passwordHash = await bcrypt.hash(newPassword, 12);
   auth.credentialEpoch = currentCredentialEpoch() + 1;
   try {
@@ -450,6 +481,9 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
 });
 
 app.post('/api/auth/recovery-code/regenerate', requireAuth, async (req, res) => {
+  if (!reserveAttempt('reauth', req.sessionID)) {
+    return res.status(429).json({ error: 'too many attempts, try again later' });
+  }
   const { currentPassword } = req.body || {};
   const currentMatches = await bcrypt.compare(
     typeof currentPassword === 'string' ? currentPassword : '',
@@ -460,6 +494,7 @@ app.post('/api/auth/recovery-code/regenerate', requireAuth, async (req, res) => 
     return res.status(401).json({ error: 'current password is incorrect' });
   }
 
+  clearAttempts('reauth', req.sessionID);
   const recoveryCode = generateRecoveryCode();
   auth.recoveryCodeHash = await bcrypt.hash(recoveryCode, 12);
   try {
