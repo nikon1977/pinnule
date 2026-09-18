@@ -76,6 +76,19 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+// Server-side already restricts appUrl to http/https, but this is cheap
+// insurance in case that ever changes: never render something like a
+// javascript: URL as a clickable link, whatever produced it.
+function isSafeUrl(url) {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url, window.location.href);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch (e) {
+    return false;
+  }
+}
+
 function appIcon(name, explicit) {
   if (explicit) return explicit;
   const slug = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -169,7 +182,7 @@ function renderHardware(data) {
         const pct = d.usedPct;
         panels.push(`
           <div class="hw-panel">
-            <div class="hw-label"><span>DISK</span><span>${d.mount}</span></div>
+            <div class="hw-label"><span>DISK</span><span>${escapeHtml(d.mount)}</span></div>
             <div class="hw-value">${pct != null ? pct.toFixed(1) : '\u2014'}<small>%</small></div>
             <div class="hw-meter"><div class="hw-meter-fill ${meterClass(pct)}" style="width:${Math.min(pct || 0, 100)}%"></div></div>
             <div class="hw-detail">${fmtBytes(d.usedBytes)} / ${fmtBytes(d.totalBytes)}</div>
@@ -223,14 +236,84 @@ function renderHardware(data) {
 
 // ---------- rendering: containers ----------
 
+function groupCardHtml(g) {
+  const memPct = (g.memUsed != null && g.memLimit) ? (g.memUsed / g.memLimit) * 100 : null;
+
+  const statsBlock = g.runningCount > 0 ? `
+    <div class="c-stats">
+      <div class="c-stat">
+        <div class="c-stat-label">CPU</div>
+        <div class="c-stat-value">${g.cpuPct != null ? g.cpuPct.toFixed(1) + '%' : '\u2014'}</div>
+        <div class="c-stat-meter"><div class="c-stat-meter-fill" style="width:${Math.min(g.cpuPct || 0, 100)}%"></div></div>
+      </div>
+      <div class="c-stat">
+        <div class="c-stat-label">MEM</div>
+        <div class="c-stat-value">${g.memUsed != null ? fmtBytes(g.memUsed) : '\u2014'}</div>
+        <div class="c-stat-meter"><div class="c-stat-meter-fill" style="width:${Math.min(memPct || 0, 100)}%"></div></div>
+      </div>
+    </div>` : '';
+
+  let actionBtns;
+  if (g.runningCount === g.totalCount) {
+    actionBtns = `
+      <div class="c-actions">
+        <button class="c-btn c-btn--restart" data-group-action="restart" data-group="${escapeHtml(g.name)}">restart all</button>
+        <button class="c-btn c-btn--stop" data-group-action="stop" data-group="${escapeHtml(g.name)}">stop all</button>
+      </div>`;
+  } else if (g.runningCount === 0) {
+    actionBtns = `<button class="c-btn c-btn--start" data-group-action="start" data-group="${escapeHtml(g.name)}">start all</button>`;
+  } else {
+    actionBtns = `
+      <div class="c-actions">
+        <button class="c-btn c-btn--start" data-group-action="start" data-group="${escapeHtml(g.name)}">start rest</button>
+        <button class="c-btn c-btn--stop" data-group-action="stop" data-group="${escapeHtml(g.name)}">stop all</button>
+      </div>`;
+  }
+
+  const iconUrl = appIcon(g.name, g.icon);
+  const safeAppUrl = isSafeUrl(g.appUrl) ? g.appUrl : null;
+  const link = safeAppUrl
+    ? `<a class="c-name-link" href="${escapeHtml(safeAppUrl)}" target="_blank" rel="noopener" title="open ${escapeHtml(g.name)}"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(g.name)}</span></a>`
+    : `<span class="c-name-link"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(g.name)}</span></span>`;
+
+  const memberList = g.memberNames.join(', ');
+  // reuses the existing amber "transitioning" dot for "some but not all
+  // running" -- same "not fully settled, worth a glance" meaning, no new
+  // CSS needed
+  const dotState = g.runningCount === g.totalCount ? 'running' : (g.runningCount === 0 ? 'stopped' : 'restarting');
+
+  const metaBlock = `
+    <div class="c-meta">
+      <span title="containers in this group">${g.totalCount} services</span>
+      <span title="combined restart count">restarts ${g.restartCount ?? 0}</span>
+    </div>`;
+
+  return `
+    <div class="c-card ${g.runningCount === 0 ? 'is-stopped' : ''}">
+      <div class="c-card-head">
+        <span class="dot ${dotClass(dotState)}"></span>
+        <span class="c-name">${link}</span>
+      </div>
+      <div class="c-image" title="${escapeHtml(memberList)}">${escapeHtml(memberList)}</div>
+      <div class="c-status">${g.runningCount}/${g.totalCount} running</div>
+      ${metaBlock}
+      ${statsBlock}
+      <div class="c-card-foot">${actionBtns}</div>
+    </div>`;
+}
+
 function renderContainers(list) {
   lastContainers = list;
   const grid = document.getElementById('container-grid');
   const countEl = document.getElementById('container-count');
 
-  const visible = settings.showStopped ? list : list.filter(c => c.state === 'running');
-  const runningCount = list.filter(c => c.state === 'running').length;
-  countEl.textContent = `${list.length} container${list.length === 1 ? '' : 's'} detected \u2014 ${runningCount} running`;
+  // group cards represent multiple real containers -- count/filter by what's
+  // actually running underneath, not by how many cards are on screen
+  const isUp = c => c.kind === 'group' ? c.runningCount > 0 : c.state === 'running';
+  const visible = settings.showStopped ? list : list.filter(isUp);
+  const totalContainers = list.reduce((sum, c) => sum + (c.kind === 'group' ? c.totalCount : 1), 0);
+  const runningContainers = list.reduce((sum, c) => sum + (c.kind === 'group' ? c.runningCount : (c.state === 'running' ? 1 : 0)), 0);
+  countEl.textContent = `${totalContainers} container${totalContainers === 1 ? '' : 's'} detected \u2014 ${runningContainers} running`;
 
   if (!visible.length) {
     grid.innerHTML = '<div class="empty-state">no containers to show. check docker.sock is mounted, or enable "show stopped".</div>';
@@ -238,6 +321,7 @@ function renderContainers(list) {
   }
 
   grid.innerHTML = visible.map(c => {
+    if (c.kind === 'group') return groupCardHtml(c);
     const cpuPct = c.cpuPct;
     const memPct = (c.memUsed != null && c.memLimit) ? (c.memUsed / c.memLimit) * 100 : null;
 
@@ -292,8 +376,9 @@ function renderContainers(list) {
           </button>` : ''}
         </form>`;
     } else {
-      const link = appUrl
-        ? `<a class="c-name-link" href="${escapeHtml(appUrl)}" target="_blank" rel="noopener" title="open ${escapeHtml(c.name)}"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.name)}</span></a>`
+      const safeAppUrl = isSafeUrl(appUrl) ? appUrl : null;
+      const link = safeAppUrl
+        ? `<a class="c-name-link" href="${escapeHtml(safeAppUrl)}" target="_blank" rel="noopener" title="open ${escapeHtml(c.name)}"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.name)}</span></a>`
         : `<span class="c-name-link"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.name)}</span></span>`;
       nameHtml = `
         <span class="c-name">
@@ -346,12 +431,43 @@ async function controlContainer(id, action, btn) {
   }
 }
 
+async function controlGroup(g, action, btn) {
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = action === 'start' ? 'starting\u2026' : action === 'restart' ? 'restarting\u2026' : 'stopping\u2026';
+  try {
+    const results = await Promise.allSettled(
+      g.memberIds.map(id => fetch(`/api/containers/${id}/${action}`, { method: 'POST' }))
+    );
+    const failedCount = results.filter(r => r.status === 'rejected' || !r.value.ok).length;
+    if (failedCount) {
+      throw new Error(`${failedCount} of ${g.memberIds.length} containers failed to ${action}`);
+    }
+    await pollOnce();
+  } catch (err) {
+    btn.textContent = original;
+    btn.disabled = false;
+    showError(`could not ${action} ${g.name}: ${err.message}`);
+  }
+}
+
 document.getElementById('container-grid').addEventListener('click', (e) => {
   const startStopBtn = e.target.closest('.c-btn[data-action]');
   if (startStopBtn) {
     const { action, id, name } = startStopBtn.dataset;
     if ((action === 'stop' || action === 'restart') && !confirm(`${action === 'stop' ? 'Stop' : 'Restart'} ${name}?`)) return;
     controlContainer(id, action, startStopBtn);
+    return;
+  }
+
+  const groupBtn = e.target.closest('.c-btn[data-group-action]');
+  if (groupBtn) {
+    const { groupAction, group } = groupBtn.dataset;
+    const g = lastContainers.find(c => c.kind === 'group' && c.name === group);
+    if (!g) return;
+    if ((groupAction === 'stop' || groupAction === 'restart') &&
+        !confirm(`${groupAction === 'stop' ? 'Stop' : 'Restart'} all ${g.totalCount} containers in ${group}?`)) return;
+    controlGroup(g, groupAction, groupBtn);
     return;
   }
 
@@ -528,6 +644,7 @@ function initSettingsUI() {
     document.getElementById('cp-status').hidden = true;
     document.getElementById('rc-status').hidden = true;
     document.getElementById('rc-code-display').hidden = true;
+    document.getElementById('rc-code-display').textContent = '';
     reauthInputs.forEach(input => input.setAttribute('readonly', ''));
   }
 

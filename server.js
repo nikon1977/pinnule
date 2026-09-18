@@ -113,37 +113,51 @@ function loadOrCreateSessionSecret() {
 }
 
 let auth = loadAuth();
+
+// Setup does two awaited bcrypt.hash() calls before persisting -- a second
+// concurrent request could pass the `if (auth)` check while the first is
+// still mid-hash, and whichever saves last would silently win. This flag is
+// set/checked synchronously (no `await` between the check and the set), so
+// it closes that gap the same way reserveAttempt() does for rate limiting.
+let setupInProgress = false;
+
+// sessions carry the credential epoch that was current when they were
+// issued. Bumping it on password change/recovery invalidates every other
+// session transparently -- requireAuth just stops accepting the old
+// epoch -- without needing to enumerate or touch the session store itself.
+function currentCredentialEpoch() {
+  return (auth && auth.credentialEpoch) || 1;
+}
 const SESSION_SECRET = loadOrCreateSessionSecret();
 
 // very small brute-force guard for login and account-recovery attempts,
 // keyed by "type:ip". in-memory only: resets on restart, which is fine for
 // its purpose.
+//
+// reserveAttempt() checks the bucket AND increments it in one synchronous
+// step -- no `await` in between -- so a burst of concurrent requests can't
+// all read the same pre-increment count before any of them get recorded.
+// The previous check-then-record-after-bcrypt shape had exactly that gap.
 const RATE_WINDOW_MS = 15 * 60 * 1000;
 const RATE_MAX_ATTEMPTS = 10;
 const attemptTracker = new Map();
 const DUMMY_HASH = '$2a$12$./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxy'; // fixed 60-char bcrypt-shaped hash used to equalize compare() timing when the real target doesn't exist
 
-function tooManyAttempts(type, ip) {
+function reserveAttempt(type, ip) {
   const key = `${type}:${ip}`;
   const now = Date.now();
   const entry = attemptTracker.get(key);
-  if (!entry || now - entry.firstAttempt > RATE_WINDOW_MS) return false;
-  return entry.count >= RATE_MAX_ATTEMPTS;
+  if (entry && now - entry.firstAttempt <= RATE_WINDOW_MS) {
+    if (entry.count >= RATE_MAX_ATTEMPTS) return false;
+    entry.count += 1;
+    return true;
+  }
+  attemptTracker.set(key, { count: 1, firstAttempt: now });
+  return true;
 }
 
-function recordAttempt(type, ip, succeeded) {
-  const key = `${type}:${ip}`;
-  const now = Date.now();
-  if (succeeded) {
-    attemptTracker.delete(key);
-    return;
-  }
-  const entry = attemptTracker.get(key);
-  if (!entry || now - entry.firstAttempt > RATE_WINDOW_MS) {
-    attemptTracker.set(key, { count: 1, firstAttempt: now });
-  } else {
-    entry.count += 1;
-  }
+function clearAttempts(type, ip) {
+  attemptTracker.delete(`${type}:${ip}`);
 }
 
 // recovery codes: shown once at setup (and once each time they're used /
@@ -187,8 +201,22 @@ function isSessionExpired(req) {
   return !!(req.session && req.session.absoluteExpiresAt && Date.now() > req.session.absoluteExpiresAt);
 }
 
+// A session that predates the last password change/recovery carries a
+// credential epoch older than the current one -- treat it the same as an
+// expired session so a compromised session can't outlive a password reset.
+function isSessionInvalid(req) {
+  if (isSessionExpired(req)) return true;
+  return !!(req.session && req.session.authenticated && req.session.credentialEpoch !== currentCredentialEpoch());
+}
+
 const app = express();
-app.set('trust proxy', 1); // so secure cookies work correctly if run behind a reverse proxy
+// No `trust proxy` here: the default deployment (network_mode: host, no
+// reverse proxy in front) means there's no upstream to strip incoming
+// X-Forwarded-For headers, so trusting them would let anyone spoof the IP
+// the rate limiter keys on. Secure-cookie detection doesn't need it either
+// now that pinnule serves HTTPS itself (req.secure reflects the real
+// connection). If you do put pinnule behind a real reverse proxy later,
+// trust proxy should be re-added scoped to that proxy's actual address.
 app.use(express.json());
 
 app.use(session({
@@ -207,9 +235,37 @@ app.use(session({
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// CSRF: sameSite:'lax' on the session cookie already blocks the most common
+// cross-site POST vector in modern browsers, but it's the only control in
+// place, and only on the routes that happen to rely on cookies at all. This
+// checks Origin (falling back to Referer) against the request's own Host
+// header for every state-changing request -- deployment-agnostic, since
+// pinnule might be reached via different hostnames/IPs on the LAN, so there's
+// no single "correct" origin to hardcode. Applies globally rather than
+// per-route so it covers every current and future POST/PUT/DELETE endpoint,
+// not just the container lifecycle ones.
+function requireSameOrigin(req, res, next) {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+  const originHeader = req.headers.origin || req.headers.referer;
+  if (!originHeader) {
+    return res.status(403).json({ error: 'missing origin' });
+  }
+  let originHost;
+  try {
+    originHost = new URL(originHeader).host;
+  } catch (e) {
+    return res.status(403).json({ error: 'invalid origin' });
+  }
+  if (originHost !== req.headers.host) {
+    return res.status(403).json({ error: 'cross-origin request blocked' });
+  }
+  next();
+}
+app.use(requireSameOrigin);
+
 function requireAuth(req, res, next) {
   if (req.session && req.session.authenticated) {
-    if (isSessionExpired(req)) {
+    if (isSessionInvalid(req)) {
       return req.session.destroy(() => {
         res.clearCookie('pinnule.sid');
         res.status(401).json({ error: 'session expired' });
@@ -223,7 +279,7 @@ function requireAuth(req, res, next) {
 // ---- auth routes ----
 
 app.get('/api/auth/status', (req, res) => {
-  if (isSessionExpired(req)) {
+  if (isSessionInvalid(req)) {
     return req.session.destroy(() => {
       res.clearCookie('pinnule.sid');
       res.json({ setupRequired: !auth, authenticated: false, username: auth ? auth.username : null, version: PACKAGE_VERSION });
@@ -238,43 +294,52 @@ app.get('/api/auth/status', (req, res) => {
 });
 
 app.post('/api/auth/setup', async (req, res) => {
-  if (auth) {
+  if (auth || setupInProgress) {
     return res.status(409).json({ error: 'setup already completed' });
   }
-  const { username, password, confirmPassword, remember } = req.body || {};
-  if (typeof username !== 'string' || !username.trim()) {
-    return res.status(400).json({ error: 'username is required' });
-  }
-  if (typeof password !== 'string' || password.length < 8) {
-    return res.status(400).json({ error: 'password must be at least 8 characters' });
-  }
-  if (password !== confirmPassword) {
-    return res.status(400).json({ error: 'passwords do not match' });
-  }
-
-  const passwordHash = await bcrypt.hash(password, 12);
-  const recoveryCode = generateRecoveryCode();
-  const recoveryCodeHash = await bcrypt.hash(recoveryCode, 12);
-  auth = {
-    username: username.trim(),
-    passwordHash,
-    recoveryCodeHash,
-    createdAt: new Date().toISOString(),
-  };
+  setupInProgress = true;
   try {
-    saveAuth(auth);
-  } catch (err) {
-    auth = null;
-    return res.status(500).json({ error: `could not save credentials: ${err.message}` });
-  }
+    const { username, password, confirmPassword, remember } = req.body || {};
+    if (typeof username !== 'string' || !username.trim()) {
+      return res.status(400).json({ error: 'username is required' });
+    }
+    if (typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({ error: 'password must be at least 8 characters' });
+    }
+    if (password !== confirmPassword) {
+      return res.status(400).json({ error: 'passwords do not match' });
+    }
 
-  req.session.regenerate((err) => {
-    if (err) return res.status(500).json({ error: 'could not start session' });
-    req.session.authenticated = true;
-    req.session.username = auth.username;
-    applySessionLength(req, remember);
-    res.json({ ok: true, username: auth.username, recoveryCode });
-  });
+    const passwordHash = await bcrypt.hash(password, 12);
+    const recoveryCode = generateRecoveryCode();
+    const recoveryCodeHash = await bcrypt.hash(recoveryCode, 12);
+    auth = {
+      username: username.trim(),
+      passwordHash,
+      recoveryCodeHash,
+      credentialEpoch: 1,
+      createdAt: new Date().toISOString(),
+    };
+    try {
+      saveAuth(auth);
+    } catch (err) {
+      auth = null;
+      return res.status(500).json({ error: `could not save credentials: ${err.message}` });
+    }
+
+    req.session.regenerate((err) => {
+      if (err) return res.status(500).json({ error: 'could not start session' });
+      req.session.authenticated = true;
+      req.session.username = auth.username;
+      req.session.credentialEpoch = currentCredentialEpoch();
+      applySessionLength(req, remember);
+      res.json({ ok: true, username: auth.username, recoveryCode });
+    });
+  } finally {
+    // harmless to release even after success: `auth` being set now blocks
+    // any further attempt on its own, via the check at the top of this route
+    setupInProgress = false;
+  }
 });
 
 app.post('/api/auth/login', async (req, res) => {
@@ -282,7 +347,7 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(409).json({ error: 'setup not completed' });
   }
   const ip = req.ip;
-  if (tooManyAttempts('login', ip)) {
+  if (!reserveAttempt('login', ip)) {
     return res.status(429).json({ error: 'too many attempts, try again later' });
   }
 
@@ -294,18 +359,29 @@ app.post('/api/auth/login', async (req, res) => {
   // always run bcrypt.compare, even on a username mismatch, against a fixed
   // dummy hash, so response timing doesn't reveal whether the username exists
   const hashToCheck = usernameMatches ? auth.passwordHash : DUMMY_HASH;
+  // captured before the async gap below: if a password change/recovery
+  // completes while this bcrypt.compare is in flight, hashToCheck is now
+  // stale even though the compare still reports a match against it, and
+  // currentCredentialEpoch() would read the *new* epoch by the time we're
+  // back here -- stamping a session that verified an old password with a
+  // new epoch, defeating the whole point of that epoch existing
+  const epochAtCheckStart = currentCredentialEpoch();
   const passwordMatches = await bcrypt.compare(providedPassword, hashToCheck).catch(() => false);
 
   if (!usernameMatches || !passwordMatches) {
-    recordAttempt('login', ip, false);
     return res.status(401).json({ error: 'invalid username or password' });
   }
+  if (auth.passwordHash !== hashToCheck || currentCredentialEpoch() !== epochAtCheckStart) {
+    // credentials changed mid-verification; what we just checked is stale
+    return res.status(401).json({ error: 'credentials changed, please try again' });
+  }
 
-  recordAttempt('login', ip, true);
+  clearAttempts('login', ip);
   req.session.regenerate((err) => {
     if (err) return res.status(500).json({ error: 'could not start session' });
     req.session.authenticated = true;
     req.session.username = auth.username;
+    req.session.credentialEpoch = currentCredentialEpoch();
     applySessionLength(req, remember);
     res.json({ ok: true, username: auth.username });
   });
@@ -316,7 +392,7 @@ app.post('/api/auth/recover', async (req, res) => {
     return res.status(409).json({ error: 'setup not completed' });
   }
   const ip = req.ip;
-  if (tooManyAttempts('recover', ip)) {
+  if (!reserveAttempt('recover', ip)) {
     return res.status(429).json({ error: 'too many attempts, try again later' });
   }
 
@@ -329,7 +405,6 @@ app.post('/api/auth/recover', async (req, res) => {
   const codeMatches = await bcrypt.compare(providedCode, hashToCheck).catch(() => false);
 
   if (!usernameMatches || !codeMatches) {
-    recordAttempt('recover', ip, false);
     return res.status(401).json({ error: 'invalid username or recovery code' });
   }
   if (typeof newPassword !== 'string' || newPassword.length < 8) {
@@ -339,8 +414,12 @@ app.post('/api/auth/recover', async (req, res) => {
     return res.status(400).json({ error: 'new passwords do not match' });
   }
 
-  recordAttempt('recover', ip, true);
+  clearAttempts('recover', ip);
   auth.passwordHash = await bcrypt.hash(newPassword, 12);
+  // account recovery is exactly the "I think someone else has my
+  // credentials" case, so this is the one place that must invalidate every
+  // other session, not just this one
+  auth.credentialEpoch = currentCredentialEpoch() + 1;
   // rotate the recovery code so the one just used can't be reused
   const newRecoveryCode = generateRecoveryCode();
   auth.recoveryCodeHash = await bcrypt.hash(newRecoveryCode, 12);
@@ -354,6 +433,7 @@ app.post('/api/auth/recover', async (req, res) => {
     if (err) return res.status(500).json({ error: 'could not start session' });
     req.session.authenticated = true;
     req.session.username = auth.username;
+    req.session.credentialEpoch = currentCredentialEpoch();
     applySessionLength(req, remember);
     res.json({ ok: true, username: auth.username, recoveryCode: newRecoveryCode });
   });
@@ -367,6 +447,11 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.post('/api/auth/change-password', requireAuth, async (req, res) => {
+  // keyed by session, not IP: the threat here is a stolen session cookie
+  // used as an unlimited password-guessing oracle, not a network attacker
+  if (!reserveAttempt('reauth', req.sessionID)) {
+    return res.status(429).json({ error: 'too many attempts, try again later' });
+  }
   const { currentPassword, newPassword, confirmNewPassword } = req.body || {};
   const currentMatches = await bcrypt.compare(
     typeof currentPassword === 'string' ? currentPassword : '',
@@ -383,16 +468,22 @@ app.post('/api/auth/change-password', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'new passwords do not match' });
   }
 
+  clearAttempts('reauth', req.sessionID);
   auth.passwordHash = await bcrypt.hash(newPassword, 12);
+  auth.credentialEpoch = currentCredentialEpoch() + 1;
   try {
     saveAuth(auth);
   } catch (err) {
     return res.status(500).json({ error: `could not save new password: ${err.message}` });
   }
+  req.session.credentialEpoch = currentCredentialEpoch(); // keep this session valid; every other one is now stale
   res.json({ ok: true });
 });
 
 app.post('/api/auth/recovery-code/regenerate', requireAuth, async (req, res) => {
+  if (!reserveAttempt('reauth', req.sessionID)) {
+    return res.status(429).json({ error: 'too many attempts, try again later' });
+  }
   const { currentPassword } = req.body || {};
   const currentMatches = await bcrypt.compare(
     typeof currentPassword === 'string' ? currentPassword : '',
@@ -403,6 +494,7 @@ app.post('/api/auth/recovery-code/regenerate', requireAuth, async (req, res) => 
     return res.status(401).json({ error: 'current password is incorrect' });
   }
 
+  clearAttempts('reauth', req.sessionID);
   const recoveryCode = generateRecoveryCode();
   auth.recoveryCodeHash = await bcrypt.hash(recoveryCode, 12);
   try {
@@ -447,6 +539,19 @@ function pickAppPort(ports) {
   return ports[0];
 }
 
+// Docker labels come from whatever image/compose file a container was
+// started with -- not something pinnule controls -- so pinnule.url has to
+// be treated as untrusted input. Only http/https can end up as a link.
+function isSafeAppUrl(url) {
+  if (typeof url !== 'string' || !url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch (e) {
+    return false;
+  }
+}
+
 // inspect() returns labels/restart count/start time — data that barely
 // changes between polls — but was being re-fetched from the Docker API for
 // every container on every poll cycle. Cache it briefly per container id
@@ -467,6 +572,83 @@ async function getContainerMeta(id, fallbackLabels) {
   };
   inspectCache.set(id, meta);
   return meta;
+}
+
+// Containers started by the same `docker compose` stack all carry the same
+// com.docker.compose.project label automatically -- no extra config needed.
+// Group them into one card instead of cluttering the grid with every
+// service of a multi-container app (onlyoffice's five containers, a
+// db+cache+app stack, etc). A project with only one member is left as a
+// normal standalone container -- most single-service compose projects
+// shouldn't be wrapped for no reason.
+function groupByComposeProject(enriched) {
+  const groups = new Map();
+  const standalone = [];
+
+  for (const item of enriched) {
+    if (!item.composeProject) {
+      standalone.push(item);
+      continue;
+    }
+    if (!groups.has(item.composeProject)) groups.set(item.composeProject, []);
+    groups.get(item.composeProject).push(item);
+  }
+
+  const result = standalone.map(item => ({ kind: 'container', ...item }));
+
+  for (const [project, members] of groups) {
+    if (members.length === 1) {
+      result.push({ kind: 'container', ...members[0] });
+      continue;
+    }
+
+    const runningCount = members.filter(m => m.state === 'running').length;
+    const totalCount = members.length;
+    // pick one member to represent the group's link/icon: prefer an
+    // explicit override, then whichever auto-detected a working URL at all
+    // (the actual web UI, typically -- a db or search container usually
+    // won't have published ports pinnule would pick up), else just the first
+    const primary =
+      members.find(m => m.urlOverridden) ||
+      members.find(m => m.appUrl) ||
+      members[0];
+    const anyStats = members.some(m => m.cpuPct != null);
+    const cpuPct = anyStats ? members.reduce((sum, m) => sum + (m.cpuPct || 0), 0) : null;
+    const memUsed = anyStats ? members.reduce((sum, m) => sum + (m.memUsed || 0), 0) : null;
+    // memory *limit* isn't additive across containers on the same host when
+    // none of them have an explicit per-container limit set (the common
+    // case) -- they'd all just report the host's total RAM, and summing
+    // that five times would be nonsense. Max is the sane aggregate either way.
+    const memLimit = Math.max(0, ...members.map(m => m.memLimit || 0)) || null;
+    const startedAt = members.map(m => m.startedAt).filter(Boolean).sort()[0] || null;
+    const createdValues = members.map(m => m.created).filter(v => v != null);
+    // com.docker.compose.project is usually just whatever directory the
+    // compose file lives in (e.g. "docker-communityserver"), not a name
+    // anyone chose on purpose -- a pinnule.name label on any member of the
+    // stack overrides the display name without needing to rename the
+    // actual compose project
+    const displayName = (members.find(m => m.nameOverride) || {}).nameOverride || project;
+
+    result.push({
+      kind: 'group',
+      name: displayName,
+      memberIds: members.map(m => m.id),
+      memberNames: members.map(m => m.name),
+      runningCount,
+      totalCount,
+      appUrl: primary.appUrl,
+      autoUrl: primary.autoUrl,
+      urlOverridden: primary.urlOverridden,
+      icon: primary.icon,
+      cpuPct, memUsed, memLimit,
+      restartCount: members.reduce((sum, m) => sum + (m.restartCount || 0), 0),
+      startedAt,
+      created: createdValues.length ? Math.min(...createdValues) : null,
+    });
+  }
+
+  result.sort((a, b) => a.name.localeCompare(b.name));
+  return result;
 }
 
 app.get('/api/containers', requireAuth, async (req, res) => {
@@ -510,10 +692,13 @@ app.get('/api/containers', requireAuth, async (req, res) => {
       }));
       const appPort = pickAppPort(ports);
       const autoUrl = appPort ? `http://${req.hostname}:${appPort.public}` : null;
-      const labelUrl = labels['pinnule.url'] || autoUrl;
+      const rawLabelUrl = labels['pinnule.url'];
+      const labelUrl = (rawLabelUrl && isSafeAppUrl(rawLabelUrl)) ? rawLabelUrl : autoUrl;
       const hasOverride = Object.prototype.hasOwnProperty.call(urlOverrides, name);
       const appUrl = hasOverride ? urlOverrides[name] : labelUrl;
       const icon = labels['pinnule.icon'] || null;
+      const nameOverride = labels['pinnule.name'] || null;
+      const composeProject = labels['com.docker.compose.project'] || null;
 
       return {
         id: c.Id.slice(0, 12),
@@ -526,15 +711,16 @@ app.get('/api/containers', requireAuth, async (req, res) => {
         autoUrl: labelUrl,
         urlOverridden: hasOverride,
         icon,
+        nameOverride,
         restartCount,
         startedAt,
         created: c.Created,
         cpuPct, memUsed, memLimit,
+        composeProject,
       };
     }));
 
-    enriched.sort((a, b) => a.name.localeCompare(b.name));
-    res.json(enriched);
+    res.json(groupByComposeProject(enriched));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -611,7 +797,18 @@ app.get('/api/system', requireAuth, async (req, res) => {
 
 // ---- container controls ----
 
+// container IDs the app itself hands out are always a 12-char hex prefix
+// (see c.Id.slice(0, 12) below), but accept up to a full 64-char id too.
+// Rejecting anything else here means a crafted :id containing URL-structural
+// characters (?, /, #...) never reaches dockerode's own request building.
+function isValidContainerId(id) {
+  return typeof id === 'string' && /^[a-f0-9]{12,64}$/i.test(id);
+}
+
 app.post('/api/containers/:id/start', requireAuth, async (req, res) => {
+  if (!isValidContainerId(req.params.id)) {
+    return res.status(400).json({ error: 'invalid container id' });
+  }
   try {
     await docker.getContainer(req.params.id).start();
     res.json({ ok: true });
@@ -621,6 +818,9 @@ app.post('/api/containers/:id/start', requireAuth, async (req, res) => {
 });
 
 app.post('/api/containers/:id/stop', requireAuth, async (req, res) => {
+  if (!isValidContainerId(req.params.id)) {
+    return res.status(400).json({ error: 'invalid container id' });
+  }
   try {
     await docker.getContainer(req.params.id).stop();
     res.json({ ok: true });
@@ -630,6 +830,9 @@ app.post('/api/containers/:id/stop', requireAuth, async (req, res) => {
 });
 
 app.post('/api/containers/:id/restart', requireAuth, async (req, res) => {
+  if (!isValidContainerId(req.params.id)) {
+    return res.status(400).json({ error: 'invalid container id' });
+  }
   try {
     await docker.getContainer(req.params.id).restart();
     res.json({ ok: true });
@@ -645,6 +848,9 @@ app.put('/api/containers/:name/url', requireAuth, (req, res) => {
   const url = (req.body && typeof req.body.url === 'string') ? req.body.url.trim() : '';
   if (!url) {
     return res.status(400).json({ error: 'url is required' });
+  }
+  if (!isSafeAppUrl(url)) {
+    return res.status(400).json({ error: 'url must start with http:// or https://' });
   }
   urlOverrides[name] = url;
   try {

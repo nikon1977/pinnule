@@ -18,6 +18,7 @@ COPY server.js ./
 COPY public ./public
 ENV PORT=4000
 ENV HTTPS_PORT=4443
+ENV NODE_ENV=production
 EXPOSE 4000
 EXPOSE 4443
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
