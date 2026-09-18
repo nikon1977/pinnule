@@ -574,6 +574,77 @@ async function getContainerMeta(id, fallbackLabels) {
   return meta;
 }
 
+// Containers started by the same `docker compose` stack all carry the same
+// com.docker.compose.project label automatically -- no extra config needed.
+// Group them into one card instead of cluttering the grid with every
+// service of a multi-container app (onlyoffice's five containers, a
+// db+cache+app stack, etc). A project with only one member is left as a
+// normal standalone container -- most single-service compose projects
+// shouldn't be wrapped for no reason.
+function groupByComposeProject(enriched) {
+  const groups = new Map();
+  const standalone = [];
+
+  for (const item of enriched) {
+    if (!item.composeProject) {
+      standalone.push(item);
+      continue;
+    }
+    if (!groups.has(item.composeProject)) groups.set(item.composeProject, []);
+    groups.get(item.composeProject).push(item);
+  }
+
+  const result = standalone.map(item => ({ kind: 'container', ...item }));
+
+  for (const [project, members] of groups) {
+    if (members.length === 1) {
+      result.push({ kind: 'container', ...members[0] });
+      continue;
+    }
+
+    const runningCount = members.filter(m => m.state === 'running').length;
+    const totalCount = members.length;
+    // pick one member to represent the group's link/icon: prefer an
+    // explicit override, then whichever auto-detected a working URL at all
+    // (the actual web UI, typically -- a db or search container usually
+    // won't have published ports pinnule would pick up), else just the first
+    const primary =
+      members.find(m => m.urlOverridden) ||
+      members.find(m => m.appUrl) ||
+      members[0];
+    const anyStats = members.some(m => m.cpuPct != null);
+    const cpuPct = anyStats ? members.reduce((sum, m) => sum + (m.cpuPct || 0), 0) : null;
+    const memUsed = anyStats ? members.reduce((sum, m) => sum + (m.memUsed || 0), 0) : null;
+    // memory *limit* isn't additive across containers on the same host when
+    // none of them have an explicit per-container limit set (the common
+    // case) -- they'd all just report the host's total RAM, and summing
+    // that five times would be nonsense. Max is the sane aggregate either way.
+    const memLimit = Math.max(0, ...members.map(m => m.memLimit || 0)) || null;
+    const startedAt = members.map(m => m.startedAt).filter(Boolean).sort()[0] || null;
+    const createdValues = members.map(m => m.created).filter(v => v != null);
+
+    result.push({
+      kind: 'group',
+      name: project,
+      memberIds: members.map(m => m.id),
+      memberNames: members.map(m => m.name),
+      runningCount,
+      totalCount,
+      appUrl: primary.appUrl,
+      autoUrl: primary.autoUrl,
+      urlOverridden: primary.urlOverridden,
+      icon: primary.icon,
+      cpuPct, memUsed, memLimit,
+      restartCount: members.reduce((sum, m) => sum + (m.restartCount || 0), 0),
+      startedAt,
+      created: createdValues.length ? Math.min(...createdValues) : null,
+    });
+  }
+
+  result.sort((a, b) => a.name.localeCompare(b.name));
+  return result;
+}
+
 app.get('/api/containers', requireAuth, async (req, res) => {
   try {
     const list = await docker.listContainers({ all: true });
@@ -620,6 +691,7 @@ app.get('/api/containers', requireAuth, async (req, res) => {
       const hasOverride = Object.prototype.hasOwnProperty.call(urlOverrides, name);
       const appUrl = hasOverride ? urlOverrides[name] : labelUrl;
       const icon = labels['pinnule.icon'] || null;
+      const composeProject = labels['com.docker.compose.project'] || null;
 
       return {
         id: c.Id.slice(0, 12),
@@ -636,11 +708,11 @@ app.get('/api/containers', requireAuth, async (req, res) => {
         startedAt,
         created: c.Created,
         cpuPct, memUsed, memLimit,
+        composeProject,
       };
     }));
 
-    enriched.sort((a, b) => a.name.localeCompare(b.name));
-    res.json(enriched);
+    res.json(groupByComposeProject(enriched));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
