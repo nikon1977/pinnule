@@ -622,10 +622,16 @@ function groupByComposeProject(enriched) {
     const memLimit = Math.max(0, ...members.map(m => m.memLimit || 0)) || null;
     const startedAt = members.map(m => m.startedAt).filter(Boolean).sort()[0] || null;
     const createdValues = members.map(m => m.created).filter(v => v != null);
+    // com.docker.compose.project is usually just whatever directory the
+    // compose file lives in (e.g. "docker-communityserver"), not a name
+    // anyone chose on purpose -- a pinnule.name label on any member of the
+    // stack overrides the display name without needing to rename the
+    // actual compose project
+    const displayName = (members.find(m => m.nameOverride) || {}).nameOverride || project;
 
     result.push({
       kind: 'group',
-      name: project,
+      name: displayName,
       memberIds: members.map(m => m.id),
       memberNames: members.map(m => m.name),
       runningCount,
@@ -691,6 +697,7 @@ app.get('/api/containers', requireAuth, async (req, res) => {
       const hasOverride = Object.prototype.hasOwnProperty.call(urlOverrides, name);
       const appUrl = hasOverride ? urlOverrides[name] : labelUrl;
       const icon = labels['pinnule.icon'] || null;
+      const nameOverride = labels['pinnule.name'] || null;
       const composeProject = labels['com.docker.compose.project'] || null;
 
       return {
@@ -704,6 +711,7 @@ app.get('/api/containers', requireAuth, async (req, res) => {
         autoUrl: labelUrl,
         urlOverridden: hasOverride,
         icon,
+        nameOverride,
         restartCount,
         startedAt,
         created: c.Created,
