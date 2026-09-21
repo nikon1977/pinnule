@@ -15,9 +15,83 @@ It automatically discovers running containers, displays system statistics, and p
 > It's very much a work in progress, but it's already fully functional and useful.
 
 Why? I wanted a homepage that links to my containers and shows basic server stats.
+
 Why not use what is already available? When checking security on the apps I was using I noticed that there are a lot of apps that when building pull outdated dependencies that have a lot of security vulnerabilities publicly identified and listed on https://www.cve.org and I wanted to mitigate as many of these as I could from my home sever.
 
----
+## 📦 Deployment
+
+Pinnule is designed to be simple to deploy using Docker Compose.
+
+### Create the Compose file
+
+Create a directory for Pinnule:
+
+```bash
+mkdir -p ~/pinnule
+cd ~/pinnule
+```
+
+Create `docker-compose.yml`:
+
+```yaml
+services:
+  pinnule:
+    image: ghcr.io/nikon1977/pinnule:latest
+    container_name: pinnule
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - pinnule_data:/app/data
+      - type: bind
+        source: /
+        target: /hostfs
+        read_only: true
+        bind:
+          propagation: rslave
+
+volumes:
+  pinnule_data:
+```
+
+### Start Pinnule
+
+```bash
+docker compose up -d
+```
+Docker will automatically pull the latest Pinnule image from GitHub Container Registry.
+
+Once the container has started, open:
+
+```text
+https://SERVER-IP:4443
+```
+For example:
+
+```text
+https://192.168.1.230:4443
+```
+
+Pinnule serves itself over HTTPS with a self-signed certificate it generates on first run (and reuses on every restart after that, so your browser's "trust this certificate" exception keeps working). Your browser will warn that the certificate isn't from a recognized authority the first time you connect — that's expected for a self-signed cert on a LAN-only app; proceed past the warning the same way you would for any other self-signed service on your network.
+
+### Updating Pinnule
+
+To update to the latest published version:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+Your custom container links are stored in the `pinnule_data` Docker volume, so they persist when Pinnule is updated or recreated.
+
+### Using a specific version
+
+Pinnule releases can also be pinned to a specific version instead of using `latest`:
+
+```yaml
+image: ghcr.io/nikon1977/pinnule:1.5.0
+```
+This allows you to stay on a known version until you are ready to upgrade.
 
 ## 🔐 Login
 
@@ -195,83 +269,6 @@ Stopping a container requires confirmation because it can interrupt a running ap
 ### Restart
 
 Restarting a container requires confirmation because it can interrupt a running application.
-
----
-
-## 📦 Deployment
-
-Pinnule is designed to be simple to deploy using Docker Compose.
-
-### Create the Compose file
-
-Create a directory for Pinnule:
-
-```bash
-mkdir -p ~/pinnule
-cd ~/pinnule
-```
-
-Create `docker-compose.yml`:
-
-```yaml
-services:
-  pinnule:
-    image: ghcr.io/nikon1977/pinnule:latest
-    container_name: pinnule
-    restart: unless-stopped
-    network_mode: host
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - pinnule_data:/app/data
-      - type: bind
-        source: /
-        target: /hostfs
-        read_only: true
-        bind:
-          propagation: rslave
-
-volumes:
-  pinnule_data:
-```
-
-### Start Pinnule
-
-```bash
-docker compose up -d
-```
-Docker will automatically pull the latest Pinnule image from GitHub Container Registry.
-
-Once the container has started, open:
-
-```text
-https://SERVER-IP:4443
-```
-For example:
-
-```text
-https://192.168.1.230:4443
-```
-
-Pinnule serves itself over HTTPS with a self-signed certificate it generates on first run (and reuses on every restart after that, so your browser's "trust this certificate" exception keeps working). Your browser will warn that the certificate isn't from a recognized authority the first time you connect — that's expected for a self-signed cert on a LAN-only app; proceed past the warning the same way you would for any other self-signed service on your network.
-
-### Updating Pinnule
-
-To update to the latest published version:
-
-```bash
-docker compose pull
-docker compose up -d
-```
-Your custom container links are stored in the `pinnule_data` Docker volume, so they persist when Pinnule is updated or recreated.
-
-### Using a specific version
-
-Pinnule releases can also be pinned to a specific version instead of using `latest`:
-
-```yaml
-image: ghcr.io/nikon1977/pinnule:1.5.0
-```
-This allows you to stay on a known version until you are ready to upgrade.
 
 ## 🌐 Why host networking rather than a Docker `ports:` mapping?
 
