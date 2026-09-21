@@ -344,24 +344,53 @@ function groupCardHtml(g) {
   if (g.runningCount === g.totalCount) {
     actionBtns = `
       <div class="c-actions">
-        <button class="c-btn c-btn--restart" data-group-action="restart" data-group="${escapeHtml(g.name)}">restart all</button>
-        <button class="c-btn c-btn--stop" data-group-action="stop" data-group="${escapeHtml(g.name)}">stop all</button>
+        <button class="c-btn c-btn--restart" data-group-action="restart" data-group="${escapeHtml(g.groupKey)}">restart all</button>
+        <button class="c-btn c-btn--stop" data-group-action="stop" data-group="${escapeHtml(g.groupKey)}">stop all</button>
       </div>`;
   } else if (g.runningCount === 0) {
-    actionBtns = `<button class="c-btn c-btn--start" data-group-action="start" data-group="${escapeHtml(g.name)}">start all</button>`;
+    actionBtns = `<button class="c-btn c-btn--start" data-group-action="start" data-group="${escapeHtml(g.groupKey)}">start all</button>`;
   } else {
     actionBtns = `
       <div class="c-actions">
-        <button class="c-btn c-btn--start" data-group-action="start" data-group="${escapeHtml(g.name)}">start rest</button>
-        <button class="c-btn c-btn--stop" data-group-action="stop" data-group="${escapeHtml(g.name)}">stop all</button>
+        <button class="c-btn c-btn--start" data-group-action="start" data-group="${escapeHtml(g.groupKey)}">start rest</button>
+        <button class="c-btn c-btn--stop" data-group-action="stop" data-group="${escapeHtml(g.groupKey)}">stop all</button>
       </div>`;
   }
 
   const iconUrl = appIcon(g.name, g.icon);
-  const safeAppUrl = isSafeUrl(g.appUrl) ? g.appUrl : null;
-  const link = safeAppUrl
-    ? `<a class="c-name-link" href="${escapeHtml(safeAppUrl)}" target="_blank" rel="noopener" title="open ${escapeHtml(g.name)}"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(g.name)}</span></a>`
-    : `<span class="c-name-link"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(g.name)}</span></span>`;
+  const groupEditKey = 'group:' + g.groupKey;
+
+  let nameHtml;
+  if (editingName === groupEditKey) {
+    nameHtml = `
+      <form class="c-edit-form" data-name="${escapeHtml(groupEditKey)}">
+        <input class="c-url-input" type="text" name="url"
+          value="${escapeHtml(g.appUrl || '')}"
+          placeholder="${escapeHtml(g.autoUrl || 'http://host:port')}"
+          autocomplete="off" spellcheck="false">
+        <button type="submit" class="c-edit-icon-btn c-edit-save" title="save" aria-label="save">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        </button>
+        <button type="button" class="c-edit-icon-btn c-edit-cancel" data-action="cancel-url" title="cancel" aria-label="cancel">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+        ${g.urlOverridden ? `<button type="button" class="c-edit-icon-btn c-edit-reset" data-action="reset-url" data-name="${escapeHtml(groupEditKey)}" title="reset to auto-detected" aria-label="reset to auto-detected">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+        </button>` : ''}
+      </form>`;
+  } else {
+    const safeAppUrl = isSafeUrl(g.appUrl) ? g.appUrl : null;
+    const link = safeAppUrl
+      ? `<a class="c-name-link" href="${escapeHtml(safeAppUrl)}" target="_blank" rel="noopener" title="open ${escapeHtml(g.name)}"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(g.name)}</span></a>`
+      : `<span class="c-name-link"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(g.name)}</span></span>`;
+    nameHtml = `
+      <span class="c-name">
+        ${link}
+        <button type="button" class="c-edit-icon-btn c-edit-trigger" data-action="edit-url" data-name="${escapeHtml(groupEditKey)}" title="edit link${g.urlOverridden ? ' (custom)' : ''}" aria-label="edit link">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
+        </button>
+      </span>`;
+  }
 
   const memberList = g.memberNames.join(', ');
   // reuses the existing amber "transitioning" dot for "some but not all
@@ -376,10 +405,10 @@ function groupCardHtml(g) {
     </div>`;
 
   return `
-    <div class="c-card ${g.runningCount === 0 ? 'is-stopped' : ''}" data-card-key="${escapeHtml('group:' + g.name)}">
+    <div class="c-card ${g.runningCount === 0 ? 'is-stopped' : ''}" data-card-key="${escapeHtml('group:' + g.groupKey)}">
       <div class="c-card-head">
         <span class="dot ${dotClass(dotState)}"></span>
-        <span class="c-name">${link}</span>
+        ${nameHtml}
       </div>
       <div class="c-image" title="${escapeHtml(memberList)}">${escapeHtml(memberList)}</div>
       <div class="c-status">${g.runningCount}/${g.totalCount} running</div>
@@ -483,7 +512,7 @@ function cardHtml(c) {
 }
 
 function cardKey(c) {
-  return c.kind === 'group' ? 'group:' + c.name : 'container:' + c.id;
+  return c.kind === 'group' ? 'group:' + c.groupKey : 'container:' + c.id;
 }
 
 // captures everything about a card that determines its DOM *shape* --
@@ -493,7 +522,8 @@ function cardKey(c) {
 function cardSignature(c) {
   if (c.kind === 'group') {
     const bucket = c.runningCount === c.totalCount ? 'all' : (c.runningCount === 0 ? 'none' : 'partial');
-    return `group|${bucket}|${isSafeUrl(c.appUrl)}`;
+    const editing = editingName === 'group:' + c.groupKey;
+    return `group|${bucket}|${isSafeUrl(c.appUrl)}|${editing}`;
   }
   return `container|${c.state}|${editingName === c.name}|${isSafeUrl(c.appUrl)}`;
 }
@@ -557,6 +587,9 @@ function patchGroupCard(el, g) {
 
   if (g.runningCount > 0) patchStatsBlock(el, g.cpuPct, g.memUsed, g.memLimit);
   patchLinkAndIcon(el, g.name, g.appUrl, g.icon);
+
+  const editTrigger = el.querySelector('.c-edit-trigger');
+  if (editTrigger) editTrigger.title = `edit link${g.urlOverridden ? ' (custom)' : ''}`;
 }
 
 function patchCard(el, c) {
@@ -670,10 +703,10 @@ document.getElementById('container-grid').addEventListener('click', (e) => {
   const groupBtn = e.target.closest('.c-btn[data-group-action]');
   if (groupBtn) {
     const { groupAction, group } = groupBtn.dataset;
-    const g = lastContainers.find(c => c.kind === 'group' && c.name === group);
+    const g = lastContainers.find(c => c.kind === 'group' && c.groupKey === group);
     if (!g) return;
     if ((groupAction === 'stop' || groupAction === 'restart') &&
-        !confirm(`${groupAction === 'stop' ? 'Stop' : 'Restart'} all ${g.totalCount} containers in ${group}?`)) return;
+        !confirm(`${groupAction === 'stop' ? 'Stop' : 'Restart'} all ${g.totalCount} containers in ${g.name}?`)) return;
     controlGroup(g, groupAction, groupBtn);
     return;
   }
