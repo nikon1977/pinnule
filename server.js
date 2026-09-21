@@ -129,6 +129,14 @@ let auth = loadAuth();
 // it closes that gap the same way reserveAttempt() does for rate limiting.
 let setupInProgress = false;
 
+// Same class of race as setupInProgress above, in /api/auth/recover instead:
+// two concurrent recovery attempts using the same still-valid recovery code
+// could both pass the bcrypt.compare check before either rotates it, then
+// both proceed to set a new password + recovery code -- whichever saves
+// last silently wins, and the other request's caller is shown a recovery
+// code that's already stale.
+let recoverInProgress = false;
+
 // sessions carry the credential epoch that was current when they were
 // issued. Bumping it on password change/recovery invalidates every other
 // session transparently -- requireAuth just stops accepting the old
@@ -403,48 +411,55 @@ app.post('/api/auth/recover', async (req, res) => {
   if (!reserveAttempt('recover', ip)) {
     return res.status(429).json({ error: 'too many attempts, try again later' });
   }
-
-  const { username, recoveryCode, newPassword, confirmNewPassword, remember } = req.body || {};
-  const providedUsername = typeof username === 'string' ? username.trim() : '';
-  const providedCode = typeof recoveryCode === 'string' ? recoveryCode.trim().toUpperCase() : '';
-
-  const usernameMatches = providedUsername === auth.username;
-  const hashToCheck = (usernameMatches && auth.recoveryCodeHash) ? auth.recoveryCodeHash : DUMMY_HASH;
-  const codeMatches = await bcrypt.compare(providedCode, hashToCheck).catch(() => false);
-
-  if (!usernameMatches || !codeMatches) {
-    return res.status(401).json({ error: 'invalid username or recovery code' });
+  if (recoverInProgress) {
+    return res.status(409).json({ error: 'a recovery is already in progress, try again shortly' });
   }
-  if (typeof newPassword !== 'string' || newPassword.length < 8) {
-    return res.status(400).json({ error: 'new password must be at least 8 characters' });
-  }
-  if (newPassword !== confirmNewPassword) {
-    return res.status(400).json({ error: 'new passwords do not match' });
-  }
-
-  clearAttempts('recover', ip);
-  auth.passwordHash = await bcrypt.hash(newPassword, 12);
-  // account recovery is exactly the "I think someone else has my
-  // credentials" case, so this is the one place that must invalidate every
-  // other session, not just this one
-  auth.credentialEpoch = currentCredentialEpoch() + 1;
-  // rotate the recovery code so the one just used can't be reused
-  const newRecoveryCode = generateRecoveryCode();
-  auth.recoveryCodeHash = await bcrypt.hash(newRecoveryCode, 12);
+  recoverInProgress = true;
   try {
-    saveAuth(auth);
-  } catch (err) {
-    return res.status(500).json({ error: `could not save new password: ${err.message}` });
-  }
+    const { username, recoveryCode, newPassword, confirmNewPassword, remember } = req.body || {};
+    const providedUsername = typeof username === 'string' ? username.trim() : '';
+    const providedCode = typeof recoveryCode === 'string' ? recoveryCode.trim().toUpperCase() : '';
 
-  req.session.regenerate((err) => {
-    if (err) return res.status(500).json({ error: 'could not start session' });
-    req.session.authenticated = true;
-    req.session.username = auth.username;
-    req.session.credentialEpoch = currentCredentialEpoch();
-    applySessionLength(req, remember);
-    res.json({ ok: true, username: auth.username, recoveryCode: newRecoveryCode });
-  });
+    const usernameMatches = providedUsername === auth.username;
+    const hashToCheck = (usernameMatches && auth.recoveryCodeHash) ? auth.recoveryCodeHash : DUMMY_HASH;
+    const codeMatches = await bcrypt.compare(providedCode, hashToCheck).catch(() => false);
+
+    if (!usernameMatches || !codeMatches) {
+      return res.status(401).json({ error: 'invalid username or recovery code' });
+    }
+    if (typeof newPassword !== 'string' || newPassword.length < 8) {
+      return res.status(400).json({ error: 'new password must be at least 8 characters' });
+    }
+    if (newPassword !== confirmNewPassword) {
+      return res.status(400).json({ error: 'new passwords do not match' });
+    }
+
+    clearAttempts('recover', ip);
+    auth.passwordHash = await bcrypt.hash(newPassword, 12);
+    // account recovery is exactly the "I think someone else has my
+    // credentials" case, so this is the one place that must invalidate every
+    // other session, not just this one
+    auth.credentialEpoch = currentCredentialEpoch() + 1;
+    // rotate the recovery code so the one just used can't be reused
+    const newRecoveryCode = generateRecoveryCode();
+    auth.recoveryCodeHash = await bcrypt.hash(newRecoveryCode, 12);
+    try {
+      saveAuth(auth);
+    } catch (err) {
+      return res.status(500).json({ error: `could not save new password: ${err.message}` });
+    }
+
+    req.session.regenerate((err) => {
+      if (err) return res.status(500).json({ error: 'could not start session' });
+      req.session.authenticated = true;
+      req.session.username = auth.username;
+      req.session.credentialEpoch = currentCredentialEpoch();
+      applySessionLength(req, remember);
+      res.json({ ok: true, username: auth.username, recoveryCode: newRecoveryCode });
+    });
+  } finally {
+    recoverInProgress = false;
+  }
 });
 
 app.post('/api/auth/logout', (req, res) => {
