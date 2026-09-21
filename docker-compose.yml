@@ -3,7 +3,7 @@ services:
     image: ghcr.io/nikon1977/pinnule:latest
     container_name: pinnule
     restart: unless-stopped
-    network_mode: host   # needed for real network stats; ports: mapping still works for disk detection alone
+    network_mode: host
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - pinnule_data:/app/data

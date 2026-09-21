@@ -1,7 +1,7 @@
 # ---- deps stage: resolve pinnule's own dependencies ----
 # Kept separate so the npm CLI itself (and everything npm bundles
 # internally to do its own job -- tar, pacote, sigstore, minimatch, etc.)
-# never has to exist in the final image at all.
+# never has to exist in the final image.
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
