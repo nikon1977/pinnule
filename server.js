@@ -604,7 +604,7 @@ async function getContainerMeta(id, fallbackLabels) {
 // db+cache+app stack, etc). A project with only one member is left as a
 // normal standalone container -- most single-service compose projects
 // shouldn't be wrapped for no reason.
-function groupByComposeProject(enriched) {
+function groupByComposeProject(enriched, urlOverrides) {
   const groups = new Map();
   const standalone = [];
 
@@ -658,17 +658,24 @@ function groupByComposeProject(enriched) {
     // stack overrides the display name without needing to rename the
     // actual compose project
     const displayName = (members.find(m => m.nameOverride) || {}).nameOverride || project;
+    // namespaced so this can never collide with an actual container name in
+    // the same urlOverrides store; project (not displayName) is the key,
+    // since that's the compose stack's real stable identity -- the display
+    // name can change via pinnule.name without this override needing to move
+    const groupOverrideKey = 'group:' + project;
+    const hasGroupOverride = Object.prototype.hasOwnProperty.call(urlOverrides, groupOverrideKey);
 
     result.push({
       kind: 'group',
       name: displayName,
+      groupKey: project,
       memberIds: members.map(m => m.id),
       memberNames: members.map(m => m.name),
       runningCount,
       totalCount,
-      appUrl: primary.appUrl,
-      autoUrl: primary.autoUrl,
-      urlOverridden: primary.urlOverridden,
+      appUrl: hasGroupOverride ? urlOverrides[groupOverrideKey] : primary.appUrl,
+      autoUrl: primary.appUrl,
+      urlOverridden: hasGroupOverride,
       icon: primary.icon,
       cpuPct, memUsed, memLimit,
       restartCount: members.reduce((sum, m) => sum + (m.restartCount || 0), 0),
@@ -750,7 +757,7 @@ app.get('/api/containers', requireAuth, async (req, res) => {
       };
     }));
 
-    res.json(groupByComposeProject(enriched));
+    res.json(groupByComposeProject(enriched, urlOverrides));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
