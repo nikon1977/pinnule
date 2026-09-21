@@ -135,9 +135,154 @@ function sparklineSvg(series, { width = 100, height = 24, min = null, max = null
   return `<svg class="hw-spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${polylines}</svg>`;
 }
 
+// tracks the ordered list of panel keys from the last render, so we can
+// tell "same panels, just new numbers" (patch in place) from "the set of
+// panels actually changed" (rebuild) -- e.g. a setting was toggled, or a
+// drive was mounted/unmounted
+let lastHwPanelKeys = null;
+
+function computeHwPanelKeys(data) {
+  const keys = [];
+  if (settings.metrics.cpu && data.cpu) keys.push('cpu');
+  if (settings.metrics.memory && data.memory) keys.push('memory');
+  if (settings.metrics.disk) {
+    if (data.disks && data.disks.length) data.disks.forEach(d => keys.push('disk:' + d.mount));
+    else keys.push('disk:none');
+  }
+  if (settings.metrics.network) keys.push('network');
+  if (settings.metrics.temp) keys.push('temp');
+  if (settings.metrics.uptime) keys.push('uptime');
+  return keys;
+}
+
+function hwPanelHtml(key, data) {
+  if (key === 'cpu') {
+    const pct = data.cpu.loadPct;
+    return `
+      <div class="hw-panel" data-panel-key="cpu">
+        <div class="hw-label"><span>CPU</span><span>${data.cpu.cores} cores</span></div>
+        <div class="hw-value">${pct != null ? pct.toFixed(1) : '\u2014'}<small>%</small></div>
+        <div class="hw-meter"><div class="hw-meter-fill ${meterClass(pct)}" style="width:${Math.min(pct || 0, 100)}%"></div></div>
+        <div class="hw-spark-wrap">${sparklineSvg([{ values: history.cpu, className: 'spark-primary' }], { min: 0, max: 100 })}</div>
+      </div>`;
+  }
+  if (key === 'memory') {
+    const pct = data.memory.usedPct;
+    return `
+      <div class="hw-panel" data-panel-key="memory">
+        <div class="hw-label"><span>MEM</span></div>
+        <div class="hw-value">${pct != null ? pct.toFixed(1) : '\u2014'}<small>%</small></div>
+        <div class="hw-meter"><div class="hw-meter-fill ${meterClass(pct)}" style="width:${Math.min(pct || 0, 100)}%"></div></div>
+        <div class="hw-spark-wrap">${sparklineSvg([{ values: history.memory, className: 'spark-primary' }], { min: 0, max: 100 })}</div>
+        <div class="hw-detail">${fmtBytes(data.memory.usedBytes)} / ${fmtBytes(data.memory.totalBytes)}</div>
+      </div>`;
+  }
+  if (key === 'disk:none') {
+    return `
+      <div class="hw-panel" data-panel-key="disk:none">
+        <div class="hw-label"><span>DISK</span></div>
+        <div class="hw-detail">no drives detected</div>
+      </div>`;
+  }
+  if (key.startsWith('disk:')) {
+    const d = data.disks.find(d => 'disk:' + d.mount === key);
+    const pct = d.usedPct;
+    return `
+      <div class="hw-panel" data-panel-key="${escapeHtml(key)}">
+        <div class="hw-label"><span>DISK</span><span>${escapeHtml(d.mount)}</span></div>
+        <div class="hw-value">${pct != null ? pct.toFixed(1) : '\u2014'}<small>%</small></div>
+        <div class="hw-meter"><div class="hw-meter-fill ${meterClass(pct)}" style="width:${Math.min(pct || 0, 100)}%"></div></div>
+        <div class="hw-detail">${fmtBytes(d.usedBytes)} / ${fmtBytes(d.totalBytes)}</div>
+      </div>`;
+  }
+  if (key === 'network') {
+    const net = data.network;
+    return `
+      <div class="hw-panel" data-panel-key="network">
+        <div class="hw-label"><span>NET</span>${net ? `<span>${escapeHtml(net.iface)}</span>` : ''}</div>
+        <div class="hw-value" style="font-size:14px;">
+          \u2193 ${net ? fmtRate(net.rxSec) : '\u2014'}<br>
+          \u2191 ${net ? fmtRate(net.txSec) : '\u2014'}
+        </div>
+        <div class="hw-spark-wrap">${sparklineSvg([
+          { values: history.netRx, className: 'spark-primary' },
+          { values: history.netTx, className: 'spark-secondary' },
+        ])}</div>
+      </div>`;
+  }
+  if (key === 'temp') {
+    const c = data.temp ? data.temp.c : null;
+    return `
+      <div class="hw-panel" data-panel-key="temp">
+        <div class="hw-label"><span>TEMP</span></div>
+        <div class="hw-value">${c != null ? c.toFixed(0) : 'n/a'}${c != null ? '<small>\u00b0C</small>' : ''}</div>
+        <div class="hw-detail" ${c == null ? '' : 'hidden'}>not exposed by host</div>
+      </div>`;
+  }
+  if (key === 'uptime') {
+    return `
+      <div class="hw-panel" data-panel-key="uptime">
+        <div class="hw-label"><span>UPTIME</span></div>
+        <div class="hw-value" style="font-size:16px;">${fmtUptime(data.uptimeSec)}</div>
+      </div>`;
+  }
+  return '';
+}
+
+function patchHwPanel(el, key, data) {
+  if (key === 'cpu' || key === 'memory') {
+    const pct = key === 'cpu' ? data.cpu.loadPct : data.memory.usedPct;
+    el.querySelector('.hw-value').innerHTML = `${pct != null ? pct.toFixed(1) : '\u2014'}<small>%</small>`;
+    const fill = el.querySelector('.hw-meter-fill');
+    fill.className = `hw-meter-fill ${meterClass(pct)}`;
+    fill.style.width = `${Math.min(pct || 0, 100)}%`;
+    const spark = key === 'cpu'
+      ? sparklineSvg([{ values: history.cpu, className: 'spark-primary' }], { min: 0, max: 100 })
+      : sparklineSvg([{ values: history.memory, className: 'spark-primary' }], { min: 0, max: 100 });
+    el.querySelector('.hw-spark-wrap').innerHTML = spark;
+    if (key === 'memory') {
+      el.querySelector('.hw-detail').textContent = `${fmtBytes(data.memory.usedBytes)} / ${fmtBytes(data.memory.totalBytes)}`;
+    }
+    return;
+  }
+  if (key.startsWith('disk:') && key !== 'disk:none') {
+    const d = data.disks.find(d => 'disk:' + d.mount === key);
+    if (!d) return; // shouldn't happen -- same key means same mount was found when building the key list
+    const pct = d.usedPct;
+    el.querySelector('.hw-value').innerHTML = `${pct != null ? pct.toFixed(1) : '\u2014'}<small>%</small>`;
+    const fill = el.querySelector('.hw-meter-fill');
+    fill.className = `hw-meter-fill ${meterClass(pct)}`;
+    fill.style.width = `${Math.min(pct || 0, 100)}%`;
+    el.querySelector('.hw-detail').textContent = `${fmtBytes(d.usedBytes)} / ${fmtBytes(d.totalBytes)}`;
+    return;
+  }
+  if (key === 'network') {
+    const net = data.network;
+    const label = el.querySelector('.hw-label');
+    label.innerHTML = `<span>NET</span>${net ? `<span>${escapeHtml(net.iface)}</span>` : ''}`;
+    el.querySelector('.hw-value').innerHTML =
+      `\u2193 ${net ? fmtRate(net.rxSec) : '\u2014'}<br>\u2191 ${net ? fmtRate(net.txSec) : '\u2014'}`;
+    el.querySelector('.hw-spark-wrap').innerHTML = sparklineSvg([
+      { values: history.netRx, className: 'spark-primary' },
+      { values: history.netTx, className: 'spark-secondary' },
+    ]);
+    return;
+  }
+  if (key === 'temp') {
+    const c = data.temp ? data.temp.c : null;
+    el.querySelector('.hw-value').innerHTML = `${c != null ? c.toFixed(0) : 'n/a'}${c != null ? '<small>\u00b0C</small>' : ''}`;
+    el.querySelector('.hw-detail').hidden = c != null;
+    return;
+  }
+  if (key === 'uptime') {
+    el.querySelector('.hw-value').textContent = fmtUptime(data.uptimeSec);
+  }
+}
+
 function renderHardware(data) {
   const el = document.getElementById('hw-strip');
   if (!data) {
+    lastHwPanelKeys = null;
     el.innerHTML = '<div class="hw-empty">hardware stats unavailable</div>';
     return;
   }
@@ -151,88 +296,30 @@ function renderHardware(data) {
     pushHistory('netTx', data.network.txSec || 0);
   }
 
-  const panels = [];
+  const keys = computeHwPanelKeys(data);
 
-  if (settings.metrics.cpu && data.cpu) {
-    const pct = data.cpu.loadPct;
-    panels.push(`
-      <div class="hw-panel">
-        <div class="hw-label"><span>CPU</span><span>${data.cpu.cores} cores</span></div>
-        <div class="hw-value">${pct != null ? pct.toFixed(1) : '\u2014'}<small>%</small></div>
-        <div class="hw-meter"><div class="hw-meter-fill ${meterClass(pct)}" style="width:${Math.min(pct || 0, 100)}%"></div></div>
-        ${sparklineSvg([{ values: history.cpu, className: 'spark-primary' }], { min: 0, max: 100 })}
-      </div>`);
+  if (!keys.length) {
+    lastHwPanelKeys = keys;
+    el.innerHTML = '<div class="hw-empty">all panels hidden \u2014 enable some in settings</div>';
+    return;
   }
 
-  if (settings.metrics.memory && data.memory) {
-    const pct = data.memory.usedPct;
-    panels.push(`
-      <div class="hw-panel">
-        <div class="hw-label"><span>MEM</span></div>
-        <div class="hw-value">${pct != null ? pct.toFixed(1) : '\u2014'}<small>%</small></div>
-        <div class="hw-meter"><div class="hw-meter-fill ${meterClass(pct)}" style="width:${Math.min(pct || 0, 100)}%"></div></div>
-        ${sparklineSvg([{ values: history.memory, className: 'spark-primary' }], { min: 0, max: 100 })}
-        <div class="hw-detail">${fmtBytes(data.memory.usedBytes)} / ${fmtBytes(data.memory.totalBytes)}</div>
-      </div>`);
+  const sameShape = lastHwPanelKeys &&
+    lastHwPanelKeys.length === keys.length &&
+    lastHwPanelKeys.every((k, i) => k === keys[i]);
+
+  if (!sameShape) {
+    el.innerHTML = keys.map(k => hwPanelHtml(k, data)).join('');
+    lastHwPanelKeys = keys;
+    return;
   }
 
-  if (settings.metrics.disk) {
-    if (data.disks && data.disks.length) {
-      data.disks.forEach(d => {
-        const pct = d.usedPct;
-        panels.push(`
-          <div class="hw-panel">
-            <div class="hw-label"><span>DISK</span><span>${escapeHtml(d.mount)}</span></div>
-            <div class="hw-value">${pct != null ? pct.toFixed(1) : '\u2014'}<small>%</small></div>
-            <div class="hw-meter"><div class="hw-meter-fill ${meterClass(pct)}" style="width:${Math.min(pct || 0, 100)}%"></div></div>
-            <div class="hw-detail">${fmtBytes(d.usedBytes)} / ${fmtBytes(d.totalBytes)}</div>
-          </div>`);
-      });
-    } else {
-      panels.push(`
-        <div class="hw-panel">
-          <div class="hw-label"><span>DISK</span></div>
-          <div class="hw-detail">no drives detected</div>
-        </div>`);
-    }
-  }
-
-  if (settings.metrics.network) {
-    const net = data.network;
-    panels.push(`
-      <div class="hw-panel">
-        <div class="hw-label"><span>NET</span>${net ? `<span>${net.iface}</span>` : ''}</div>
-        <div class="hw-value" style="font-size:14px;">
-          \u2193 ${net ? fmtRate(net.rxSec) : '\u2014'}<br>
-          \u2191 ${net ? fmtRate(net.txSec) : '\u2014'}
-        </div>
-        ${sparklineSvg([
-          { values: history.netRx, className: 'spark-primary' },
-          { values: history.netTx, className: 'spark-secondary' },
-        ])}
-      </div>`);
-  }
-
-  if (settings.metrics.temp) {
-    const c = data.temp ? data.temp.c : null;
-    panels.push(`
-      <div class="hw-panel">
-        <div class="hw-label"><span>TEMP</span></div>
-        <div class="hw-value">${c != null ? c.toFixed(0) : 'n/a'}${c != null ? '<small>\u00b0C</small>' : ''}</div>
-        ${c == null ? '<div class="hw-detail">not exposed by host</div>' : ''}
-      </div>`);
-  }
-
-  if (settings.metrics.uptime) {
-    panels.push(`
-      <div class="hw-panel">
-        <div class="hw-label"><span>UPTIME</span></div>
-        <div class="hw-value" style="font-size:16px;">${fmtUptime(data.uptimeSec)}</div>
-      </div>`);
-  }
-
-  el.innerHTML = panels.length ? panels.join('') : '<div class="hw-empty">all panels hidden \u2014 enable some in settings</div>';
+  keys.forEach(key => {
+    const panelEl = el.querySelector(`[data-panel-key="${CSS.escape(key)}"]`);
+    if (panelEl) patchHwPanel(panelEl, key, data);
+  });
 }
+
 
 // ---------- rendering: containers ----------
 
@@ -289,7 +376,7 @@ function groupCardHtml(g) {
     </div>`;
 
   return `
-    <div class="c-card ${g.runningCount === 0 ? 'is-stopped' : ''}">
+    <div class="c-card ${g.runningCount === 0 ? 'is-stopped' : ''}" data-card-key="${escapeHtml('group:' + g.name)}">
       <div class="c-card-head">
         <span class="dot ${dotClass(dotState)}"></span>
         <span class="c-name">${link}</span>
@@ -301,6 +388,189 @@ function groupCardHtml(g) {
       <div class="c-card-foot">${actionBtns}</div>
     </div>`;
 }
+
+function containerCardHtml(c) {
+  const cpuPct = c.cpuPct;
+  const memPct = (c.memUsed != null && c.memLimit) ? (c.memUsed / c.memLimit) * 100 : null;
+
+  const statsBlock = c.state === 'running' ? `
+    <div class="c-stats">
+      <div class="c-stat">
+        <div class="c-stat-label">CPU</div>
+        <div class="c-stat-value">${cpuPct != null ? cpuPct.toFixed(1) + '%' : '\u2014'}</div>
+        <div class="c-stat-meter"><div class="c-stat-meter-fill" style="width:${Math.min(cpuPct || 0, 100)}%"></div></div>
+      </div>
+      <div class="c-stat">
+        <div class="c-stat-label">MEM</div>
+        <div class="c-stat-value">${c.memUsed != null ? fmtBytes(c.memUsed) : '\u2014'}</div>
+        <div class="c-stat-meter"><div class="c-stat-meter-fill" style="width:${Math.min(memPct || 0, 100)}%"></div></div>
+      </div>
+    </div>` : '';
+
+  let actionBtns = '';
+  if (c.state === 'running') {
+    actionBtns = `
+      <div class="c-actions">
+        <button class="c-btn c-btn--restart" data-action="restart" data-id="${c.id}" data-name="${c.name}">restart</button>
+        <button class="c-btn c-btn--stop" data-action="stop" data-id="${c.id}" data-name="${c.name}">stop</button>
+      </div>`;
+  } else if (c.state === 'exited' || c.state === 'created' || c.state === 'dead') {
+    actionBtns = `<button class="c-btn c-btn--start" data-action="start" data-id="${c.id}" data-name="${c.name}">start</button>`;
+  } else {
+    actionBtns = `<span class="c-btn c-btn--disabled">${c.state}\u2026</span>`;
+  }
+
+  const autoUrl = c.autoUrl != null ? c.autoUrl : c.appUrl;
+  const hasOverride = !!c.urlOverridden;
+  const appUrl = c.appUrl;
+  const iconUrl = appIcon(c.name, c.icon);
+
+  let nameHtml;
+  if (editingName === c.name) {
+    nameHtml = `
+      <form class="c-edit-form" data-name="${escapeHtml(c.name)}">
+        <input class="c-url-input" type="text" name="url"
+          value="${escapeHtml(appUrl || '')}"
+          placeholder="${escapeHtml(autoUrl || 'http://host:port')}"
+          autocomplete="off" spellcheck="false">
+        <button type="submit" class="c-edit-icon-btn c-edit-save" title="save" aria-label="save">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        </button>
+        <button type="button" class="c-edit-icon-btn c-edit-cancel" data-action="cancel-url" title="cancel" aria-label="cancel">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+        ${hasOverride ? `<button type="button" class="c-edit-icon-btn c-edit-reset" data-action="reset-url" data-name="${escapeHtml(c.name)}" title="reset to auto-detected" aria-label="reset to auto-detected">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+        </button>` : ''}
+      </form>`;
+  } else {
+    const safeAppUrl = isSafeUrl(appUrl) ? appUrl : null;
+    const link = safeAppUrl
+      ? `<a class="c-name-link" href="${escapeHtml(safeAppUrl)}" target="_blank" rel="noopener" title="open ${escapeHtml(c.name)}"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.name)}</span></a>`
+      : `<span class="c-name-link"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.name)}</span></span>`;
+    nameHtml = `
+      <span class="c-name">
+        ${link}
+        <button type="button" class="c-edit-icon-btn c-edit-trigger" data-action="edit-url" data-name="${escapeHtml(c.name)}" title="edit link${hasOverride ? ' (custom)' : ''}" aria-label="edit link">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
+        </button>
+      </span>`;
+  }
+
+  const runtime = c.state === 'running' ? fmtStartedAt(c.startedAt) : null;
+  const metaBlock = `
+    <div class="c-meta">
+      <span title="container uptime">${runtime ? `up ${runtime}` : `created ${new Date(c.created * 1000).toLocaleDateString()}`}</span>
+      <span title="restart count">restarts ${c.restartCount ?? 0}</span>
+    </div>`;
+
+  return `
+    <div class="c-card ${c.state !== 'running' ? 'is-stopped' : ''}" data-card-key="${escapeHtml('container:' + c.id)}">
+      <div class="c-card-head">
+        <span class="dot ${dotClass(c.state)}"></span>
+        ${nameHtml}
+      </div>
+      <div class="c-image" title="${escapeHtml(c.image)}">${escapeHtml(c.image)}</div>
+      <div class="c-status">${escapeHtml(c.status)}</div>
+      ${metaBlock}
+      ${statsBlock}
+      <div class="c-card-foot">${actionBtns}</div>
+    </div>`;
+}
+
+function cardHtml(c) {
+  return c.kind === 'group' ? groupCardHtml(c) : containerCardHtml(c);
+}
+
+function cardKey(c) {
+  return c.kind === 'group' ? 'group:' + c.name : 'container:' + c.id;
+}
+
+// captures everything about a card that determines its DOM *shape* --
+// which elements exist, not just what they say. If this is unchanged since
+// the last render, the card can be patched in place (same nodes, new
+// values); if it changed, that one card gets rebuilt (not the whole grid).
+function cardSignature(c) {
+  if (c.kind === 'group') {
+    const bucket = c.runningCount === c.totalCount ? 'all' : (c.runningCount === 0 ? 'none' : 'partial');
+    return `group|${bucket}|${isSafeUrl(c.appUrl)}`;
+  }
+  return `container|${c.state}|${editingName === c.name}|${isSafeUrl(c.appUrl)}`;
+}
+
+function patchStatsBlock(el, cpuPct, memUsed, memLimit) {
+  const memPct = (memUsed != null && memLimit) ? (memUsed / memLimit) * 100 : null;
+  const stats = el.querySelectorAll('.c-stat');
+  if (stats[0]) {
+    stats[0].querySelector('.c-stat-value').textContent = cpuPct != null ? cpuPct.toFixed(1) + '%' : '\u2014';
+    stats[0].querySelector('.c-stat-meter-fill').style.width = `${Math.min(cpuPct || 0, 100)}%`;
+  }
+  if (stats[1]) {
+    stats[1].querySelector('.c-stat-value').textContent = memUsed != null ? fmtBytes(memUsed) : '\u2014';
+    stats[1].querySelector('.c-stat-meter-fill').style.width = `${Math.min(memPct || 0, 100)}%`;
+  }
+}
+
+function patchLinkAndIcon(el, name, appUrl, icon) {
+  const link = el.querySelector('.c-name-link');
+  if (!link) return;
+  const safeAppUrl = isSafeUrl(appUrl) ? appUrl : null;
+  if (safeAppUrl && link.tagName === 'A') {
+    link.href = safeAppUrl;
+    link.title = `open ${name}`;
+  }
+  const img = link.querySelector('.c-icon');
+  const newIconUrl = appIcon(name, icon);
+  if (img && img.src !== newIconUrl) img.src = newIconUrl;
+  const nameSpan = link.querySelector('span');
+  if (nameSpan) nameSpan.textContent = name;
+}
+
+// editing-mode cards are never passed here -- pollOnce skips renderContainers
+// entirely while editingName is set, so there's nothing to patch mid-edit
+function patchContainerCard(el, c) {
+  el.querySelector('.c-status').textContent = c.status;
+  const runtime = c.state === 'running' ? fmtStartedAt(c.startedAt) : null;
+  const metaSpans = el.querySelectorAll('.c-meta span');
+  if (metaSpans[0]) metaSpans[0].textContent = runtime ? `up ${runtime}` : `created ${new Date(c.created * 1000).toLocaleDateString()}`;
+  if (metaSpans[1]) metaSpans[1].textContent = `restarts ${c.restartCount ?? 0}`;
+  const imgLine = el.querySelector('.c-image');
+  imgLine.textContent = c.image;
+  imgLine.title = c.image;
+
+  if (c.state === 'running') patchStatsBlock(el, c.cpuPct, c.memUsed, c.memLimit);
+  patchLinkAndIcon(el, c.name, c.appUrl, c.icon);
+
+  const editTrigger = el.querySelector('.c-edit-trigger');
+  if (editTrigger) editTrigger.title = `edit link${c.urlOverridden ? ' (custom)' : ''}`;
+}
+
+function patchGroupCard(el, g) {
+  el.querySelector('.c-status').textContent = `${g.runningCount}/${g.totalCount} running`;
+  const metaSpans = el.querySelectorAll('.c-meta span');
+  if (metaSpans[0]) metaSpans[0].textContent = `${g.totalCount} services`;
+  if (metaSpans[1]) metaSpans[1].textContent = `restarts ${g.restartCount ?? 0}`;
+  const memberList = g.memberNames.join(', ');
+  const imgLine = el.querySelector('.c-image');
+  imgLine.textContent = memberList;
+  imgLine.title = memberList;
+
+  if (g.runningCount > 0) patchStatsBlock(el, g.cpuPct, g.memUsed, g.memLimit);
+  patchLinkAndIcon(el, g.name, g.appUrl, g.icon);
+}
+
+function patchCard(el, c) {
+  if (c.kind === 'group') patchGroupCard(el, c);
+  else patchContainerCard(el, c);
+}
+
+// tracks the last render's ordered card keys and each card's structural
+// signature, so a poll with unchanged data (by far the common case) patches
+// existing DOM nodes in place instead of tearing down and rebuilding the
+// whole grid -- keeps CSS transitions, icon images, and hover state intact
+// instead of the visible "flash" a full innerHTML replace causes every time.
+let lastCardKeys = null;
+let lastCardSignatures = new Map();
 
 function renderContainers(list) {
   lastContainers = list;
@@ -317,98 +587,35 @@ function renderContainers(list) {
 
   if (!visible.length) {
     grid.innerHTML = '<div class="empty-state">no containers to show. check docker.sock is mounted, or enable "show stopped".</div>';
+    lastCardKeys = null;
+    lastCardSignatures = new Map();
     return;
   }
 
-  grid.innerHTML = visible.map(c => {
-    if (c.kind === 'group') return groupCardHtml(c);
-    const cpuPct = c.cpuPct;
-    const memPct = (c.memUsed != null && c.memLimit) ? (c.memUsed / c.memLimit) * 100 : null;
+  const keys = visible.map(cardKey);
+  const sameShape = lastCardKeys &&
+    lastCardKeys.length === keys.length &&
+    lastCardKeys.every((k, i) => k === keys[i]);
 
-    const statsBlock = c.state === 'running' ? `
-      <div class="c-stats">
-        <div class="c-stat">
-          <div class="c-stat-label">CPU</div>
-          <div class="c-stat-value">${cpuPct != null ? cpuPct.toFixed(1) + '%' : '\u2014'}</div>
-          <div class="c-stat-meter"><div class="c-stat-meter-fill" style="width:${Math.min(cpuPct || 0, 100)}%"></div></div>
-        </div>
-        <div class="c-stat">
-          <div class="c-stat-label">MEM</div>
-          <div class="c-stat-value">${c.memUsed != null ? fmtBytes(c.memUsed) : '\u2014'}</div>
-          <div class="c-stat-meter"><div class="c-stat-meter-fill" style="width:${Math.min(memPct || 0, 100)}%"></div></div>
-        </div>
-      </div>` : '';
+  if (!sameShape) {
+    grid.innerHTML = visible.map(cardHtml).join('');
+    lastCardKeys = keys;
+    lastCardSignatures = new Map(visible.map(c => [cardKey(c), cardSignature(c)]));
+    return;
+  }
 
-    let actionBtns = '';
-    if (c.state === 'running') {
-      actionBtns = `
-        <div class="c-actions">
-          <button class="c-btn c-btn--restart" data-action="restart" data-id="${c.id}" data-name="${c.name}">restart</button>
-          <button class="c-btn c-btn--stop" data-action="stop" data-id="${c.id}" data-name="${c.name}">stop</button>
-        </div>`;
-    } else if (c.state === 'exited' || c.state === 'created' || c.state === 'dead') {
-      actionBtns = `<button class="c-btn c-btn--start" data-action="start" data-id="${c.id}" data-name="${c.name}">start</button>`;
+  visible.forEach(c => {
+    const key = cardKey(c);
+    const sig = cardSignature(c);
+    const el = grid.querySelector(`[data-card-key="${CSS.escape(key)}"]`);
+    if (!el) return; // shouldn't happen given sameShape, but don't crash the poll loop if it does
+    if (lastCardSignatures.get(key) !== sig) {
+      el.outerHTML = cardHtml(c);
+      lastCardSignatures.set(key, sig);
     } else {
-      actionBtns = `<span class="c-btn c-btn--disabled">${c.state}\u2026</span>`;
+      patchCard(el, c);
     }
-
-    const autoUrl = c.autoUrl != null ? c.autoUrl : c.appUrl;
-    const hasOverride = !!c.urlOverridden;
-    const appUrl = c.appUrl;
-    const iconUrl = appIcon(c.name, c.icon);
-
-    let nameHtml;
-    if (editingName === c.name) {
-      nameHtml = `
-        <form class="c-edit-form" data-name="${escapeHtml(c.name)}">
-          <input class="c-url-input" type="text" name="url"
-            value="${escapeHtml(appUrl || '')}"
-            placeholder="${escapeHtml(autoUrl || 'http://host:port')}"
-            autocomplete="off" spellcheck="false">
-          <button type="submit" class="c-edit-icon-btn c-edit-save" title="save" aria-label="save">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          </button>
-          <button type="button" class="c-edit-icon-btn c-edit-cancel" data-action="cancel-url" title="cancel" aria-label="cancel">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          </button>
-          ${hasOverride ? `<button type="button" class="c-edit-icon-btn c-edit-reset" data-action="reset-url" data-name="${escapeHtml(c.name)}" title="reset to auto-detected" aria-label="reset to auto-detected">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
-          </button>` : ''}
-        </form>`;
-    } else {
-      const safeAppUrl = isSafeUrl(appUrl) ? appUrl : null;
-      const link = safeAppUrl
-        ? `<a class="c-name-link" href="${escapeHtml(safeAppUrl)}" target="_blank" rel="noopener" title="open ${escapeHtml(c.name)}"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.name)}</span></a>`
-        : `<span class="c-name-link"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.name)}</span></span>`;
-      nameHtml = `
-        <span class="c-name">
-          ${link}
-          <button type="button" class="c-edit-icon-btn c-edit-trigger" data-action="edit-url" data-name="${escapeHtml(c.name)}" title="edit link${hasOverride ? ' (custom)' : ''}" aria-label="edit link">
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
-          </button>
-        </span>`;
-    }
-
-    const runtime = c.state === 'running' ? fmtStartedAt(c.startedAt) : null;
-    const metaBlock = `
-      <div class="c-meta">
-        <span title="container uptime">${runtime ? `up ${runtime}` : `created ${new Date(c.created * 1000).toLocaleDateString()}`}</span>
-        <span title="restart count">restarts ${c.restartCount ?? 0}</span>
-      </div>`;
-
-    return `
-      <div class="c-card ${c.state !== 'running' ? 'is-stopped' : ''}">
-        <div class="c-card-head">
-          <span class="dot ${dotClass(c.state)}"></span>
-          ${nameHtml}
-        </div>
-        <div class="c-image" title="${escapeHtml(c.image)}">${escapeHtml(c.image)}</div>
-        <div class="c-status">${escapeHtml(c.status)}</div>
-        ${metaBlock}
-        ${statsBlock}
-        <div class="c-card-foot">${actionBtns}</div>
-      </div>`;
-  }).join('');
+  });
 }
 
 // ---------- container controls ----------
