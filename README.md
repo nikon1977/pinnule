@@ -14,7 +14,84 @@ It automatically discovers running containers, displays system statistics, and p
 >
 > It's very much a work in progress, but it's already fully functional and useful.
 
----
+Why? I wanted a homepage that links to my containers and shows basic server stats.
+
+Why not use what is already available? When checking security on the apps I was using I noticed that there are a lot of apps that when building pull outdated dependencies that have a lot of security vulnerabilities publicly identified and listed on https://www.cve.org and I wanted to mitigate as many of these as I could from my home sever.
+
+## 📦 Deployment
+
+Pinnule is designed to be simple to deploy using Docker Compose.
+
+### Create the Compose file
+
+Create a directory for Pinnule:
+
+```bash
+mkdir -p ~/pinnule
+cd ~/pinnule
+```
+
+Create `docker-compose.yml`:
+
+```yaml
+services:
+  pinnule:
+    image: ghcr.io/nikon1977/pinnule:latest
+    container_name: pinnule
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - pinnule_data:/app/data
+      - type: bind
+        source: /
+        target: /hostfs
+        read_only: true
+        bind:
+          propagation: rslave
+
+volumes:
+  pinnule_data:
+```
+
+### Start Pinnule
+
+```bash
+docker compose up -d
+```
+Docker will automatically pull the latest Pinnule image from GitHub Container Registry.
+
+Once the container has started, open:
+
+```text
+https://SERVER-IP:4443
+```
+For example:
+
+```text
+https://192.168.1.230:4443
+```
+
+Pinnule serves itself over HTTPS with a self-signed certificate it generates on first run (and reuses on every restart after that, so your browser's "trust this certificate" exception keeps working). Your browser will warn that the certificate isn't from a recognized authority the first time you connect — that's expected for a self-signed cert on a LAN-only app; proceed past the warning the same way you would for any other self-signed service on your network.
+
+### Updating Pinnule
+
+To update to the latest published version:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+Your custom container links are stored in the `pinnule_data` Docker volume, so they persist when Pinnule is updated or recreated.
+
+### Using a specific version
+
+Pinnule releases can also be pinned to a specific version instead of using `latest`:
+
+```yaml
+image: ghcr.io/nikon1977/pinnule:1.5.0
+```
+This allows you to stay on a known version until you are ready to upgrade.
 
 ## 🔐 Login
 
@@ -30,6 +107,23 @@ Pinnule is gated behind a single local admin account.
 If you ever lose both your password and your recovery code, the account can only be reset by removing `auth.json` from the data volume (`docker exec -it pinnule rm /app/data/auth.json`), which clears the account entirely and shows the setup screen again on next load.
 
 ## ✨ Features
+
+### 🖥️ Hardware monitoring
+
+Pinnule provides a configurable overview of the host system, including:
+
+* CPU load
+* Memory usage
+* Disk usage
+* Network throughput
+* Temperature
+* System uptime
+
+The hardware panels can be enabled or disabled from the **Settings** drawer using the gear icon.
+
+The polling interval is also configurable.
+
+Your preferences are stored in the browser using `localStorage`, so they persist between page reloads.
 
 ### 🐳 Automatic container discovery
 
@@ -49,25 +143,6 @@ For each container Pinnule can display:
 * Docker restart count
 
 Anything running on the Docker host can automatically appear on the dashboard.
-
----
-
-### 🖥️ Hardware monitoring
-
-Pinnule provides a configurable overview of the host system, including:
-
-* CPU load
-* Memory usage
-* Disk usage
-* Network throughput
-* Temperature
-* System uptime
-
-The hardware panels can be enabled or disabled from the **Settings** drawer using the gear icon.
-
-The polling interval is also configurable.
-
-Your preferences are stored in the browser using `localStorage`, so they persist between page reloads.
 
 ### App links and icons
 
@@ -148,14 +223,13 @@ Because the data is stored in a Docker volume, custom links survive:
 * Container restarts
 * Image updates
 * Container rebuilds
-* Docker Compose redeployments
+* Docker Compose redeployment's
 
 The data will remain available as long as the `pinnule_data` Docker volume is retained.
 
-
 ### Docker labels
 
-You can override the automatic behaviour with optional Docker labels:
+You can override the automatic behavior with optional Docker labels written into your applications compose.yaml:
 
 ```yaml
 labels:
@@ -180,11 +254,9 @@ If an icon cannot be found, it is hidden cleanly rather than leaving a broken-im
 
 Overrides the display name of a [multi-container app group](#grouping-multi-container-apps). Only relevant for containers that are part of a `docker compose` stack with more than one service — it has no effect on a standalone container. Set it on any one service in the stack; if more than one service sets it, the first one Pinnule encounters wins.
 
----
-
 ## 🎮 Controlling containers
 
-Each container card includes a start/stop control.
+Each container card includes a start/stop and restart control.
 
 ### Start
 
@@ -194,101 +266,17 @@ Starting a container happens immediately.
 
 Stopping a container requires confirmation because it can interrupt a running application.
 
-The container name itself is also clickable when an application URL can be determined.
+### Restart
 
----
+Restarting a container requires confirmation because it can interrupt a running application.
 
-## 📦 Deployment
-
-Pinnule is designed to be simple to deploy using Docker Compose.
-
-### Create the Compose file
-
-Create a directory for Pinnule:
-
-```bash
-mkdir -p ~/pinnule
-cd ~/pinnule
-```
-
-Create `docker-compose.yml`:
-
-```yaml
-services:
-  pinnule:
-    image: ghcr.io/nikon1977/pinnule:latest
-    container_name: pinnule
-    restart: unless-stopped
-    network_mode: host   # needed for real network stats; ports: mapping still works for disk detection alone
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - pinnule_data:/app/data
-      - type: bind
-        source: /
-        target: /hostfs
-        read_only: true
-        bind:
-          propagation: rslave
-
-volumes:
-  pinnule_data:
-```
-
-### Start Pinnule
-
-```bash
-docker compose up -d
-```
-
-Docker will automatically pull the latest Pinnule image from GitHub Container Registry.
-
-Once the container has started, open:
-
-```text
-https://SERVER-IP:4443
-```
-
-For example:
-
-```text
-https://192.168.1.230:4443
-```
-
-Pinnule serves itself over HTTPS with a self-signed certificate it generates on first run (and reuses on every restart after that, so your browser's "trust this certificate" exception keeps working). Your browser will warn that the certificate isn't from a recognized authority the first time you connect — that's expected for a self-signed cert on a LAN-only app; proceed past the warning the same way you would for any other self-signed service on your network.
-
-The old plain-HTTP address (`http://SERVER-IP:4000`) still works, but only redirects to the HTTPS address above — it no longer serves the app directly, so your login password is never sent unencrypted.
-
-### Updating Pinnule
-
-To update to the latest published version:
-
-```bash
-docker compose pull
-docker compose up -d
-```
-
-Your custom container links are stored in the `pinnule_data` Docker volume, so they persist when Pinnule is updated or recreated.
-
-### Using a specific version
-
-Pinnule releases can also be pinned to a specific version instead of using `latest`:
-
-```yaml
-image: ghcr.io/nikon1977/pinnule:1.1.0
-```
-
-This allows you to stay on a known version until you are ready to upgrade.
-
-
-## 🌐 Why host networking?
+## 🌐 Why host networking rather than a Docker `ports:` mapping?
 
 Pinnule uses:
 
 ```yaml
 network_mode: host
 ```
-
-rather than a Docker `ports:` mapping.
 
 This is important for the network monitoring functionality.
 
@@ -332,8 +320,6 @@ If a drive still doesn't appear after rebuilding Pinnule, check the host with:
 mount
 ```
 
----
-
 ## 🔒 Why `/:/hostfs:ro`?
 
 Pinnule needs access to some information from the Docker host.
@@ -361,8 +347,6 @@ This allows Pinnule to inspect the host filesystem without giving it write acces
 
 **Nothing inside the container can write to the host through this mount.**
 
----
-
 ## 🌡️ If TEMP shows `n/a`
 
 Temperature monitoring depends on what sensors your hardware and kernel expose through:
@@ -379,8 +363,6 @@ If temperature remains unavailable, you can either:
 2. Install `lm-sensors` on the host and check whether additional sensors become available.
 
 This is harmless and does not affect the rest of Pinnule.
-
----
 
 ## 🛠️ Extending Pinnule
 
@@ -407,8 +389,6 @@ Contains the dashboard styling.
 
 CSS custom properties are located near the top of the file, making it easy to change the theme.
 
----
-
 ## 🤖 Development
 
 Pinnule was built using a **vibe-coding workflow with multiple AI agents**.
@@ -417,15 +397,12 @@ The project is intentionally kept relatively small and straightforward so that i
 
 There is still plenty I'd like to add.
 
----
-
 ## 📋 Roadmap
 
 Pinnule is already functional, but there is plenty of room for improvement.
 
 Some areas I'd like to explore:
 
-* Better application URL detection
 * More container controls
 * Additional hardware metrics
 * More detailed network information
@@ -433,15 +410,11 @@ Some areas I'd like to explore:
 * More dashboard customisation
 * More configuration options
 
----
-
 ## 📄 License
 
 Pinnule is released under the **MIT License**.
 
 See [`LICENSE`](LICENSE) for the full license text.
-
----
 
 ## 👤 Author
 
@@ -449,8 +422,6 @@ Created by **nikon1977**.
 
 GitHub:
 https://github.com/nikon1977
-
----
 
 ## ⭐ If you find Pinnule useful
 
