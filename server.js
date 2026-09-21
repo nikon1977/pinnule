@@ -12,6 +12,14 @@ const Docker = require('dockerode');
 const si = require('systeminformation');
 
 const PORT = process.env.PORT || 4000;
+// per-container CPU% (below) matches `docker stats`' convention: percent of
+// ONE core, so a single busy container can legitimately show >100%. That's
+// fine and expected for one container, but summing several of them for a
+// group card crosses 100% far more easily and just reads as broken. This
+// is used to convert a group's *summed* CPU% into percent of total host
+// capacity instead, which is naturally bounded 0-100 -- os.cpus() is a
+// synchronous, zero-latency call, so this costs nothing per request.
+const HOST_CORES = os.cpus().length || 1;
 const HTTPS_PORT = process.env.HTTPS_PORT || 4443;
 const PACKAGE_VERSION = require('./package.json').version;
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
@@ -613,7 +621,14 @@ function groupByComposeProject(enriched) {
       members.find(m => m.appUrl) ||
       members[0];
     const anyStats = members.some(m => m.cpuPct != null);
-    const cpuPct = anyStats ? members.reduce((sum, m) => sum + (m.cpuPct || 0), 0) : null;
+    const cpuPctSummed = anyStats ? members.reduce((sum, m) => sum + (m.cpuPct || 0), 0) : null;
+    // each member's cpuPct is "% of one core" (docker stats convention);
+    // summed across N containers that's no longer intuitive to read the
+    // same way -- convert to "% of total host capacity" instead, which is
+    // what a "how much of my machine is this whole stack using" figure
+    // should actually mean. Math.min as a safety net for the sampling-
+    // timing jitter between each container's own stats snapshot.
+    const cpuPct = cpuPctSummed != null ? Math.min(cpuPctSummed / HOST_CORES, 100) : null;
     const memUsed = anyStats ? members.reduce((sum, m) => sum + (m.memUsed || 0), 0) : null;
     // memory *limit* isn't additive across containers on the same host when
     // none of them have an explicit per-container limit set (the common
