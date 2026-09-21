@@ -223,7 +223,7 @@ Because the data is stored in a Docker volume, custom links survive:
 * Container restarts
 * Image updates
 * Container rebuilds
-* Docker Compose redeployment's
+* Docker Compose redeployments
 
 The data will remain available as long as the `pinnule_data` Docker volume is retained.
 
