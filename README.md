@@ -1,6 +1,6 @@
 # Pinnule
 
-Current version 1.5.1
+Current version 1.5.2
 
 **A nimble, lightweight dashboard for your homelab.**
 
@@ -207,6 +207,8 @@ A compose project with only one container is shown as a normal standalone card, 
 
 Because `com.docker.compose.project` is usually just the name of the directory the `docker-compose.yml` file happens to live in, the group's display name can end up unhelpful (e.g. `docker-communityserver` for an OnlyOffice stack). Set a `pinnule.name` label on any one service in the stack to override it — see [`pinnule.name`](#pinnulename) below.
 
+Group cards have their own **pencil icon**, same as standalone containers, for setting a custom link directly from the dashboard rather than relying on a `pinnule.url` label. This uses the same server-side storage as container links, under a `group:<compose-project-name>` key, so it survives restarts and redeployments the same way.
+
 ### Persistent application data
 
 Pinnule uses a Docker named volume for application data:
@@ -223,7 +225,7 @@ Because the data is stored in a Docker volume, custom links survive:
 * Container restarts
 * Image updates
 * Container rebuilds
-* Docker Compose redeployment's
+* Docker Compose redeployments
 
 The data will remain available as long as the `pinnule_data` Docker volume is retained.
 
