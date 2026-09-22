@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
@@ -47,6 +47,21 @@ jobs:
             ghcr.io/nikon1977/pinnule:latest
             ghcr.io/nikon1977/pinnule:${{ github.sha }}
             ghcr.io/nikon1977/pinnule:${{ steps.version.outputs.value }}
+
+      - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.version.outputs.value }}"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, skipping"
+          else
+            gh release create "$TAG" \
+              --repo "${{ github.repository }}" \
+              --title "$TAG" \
+              --generate-notes
+          fi
 
       - name: Build and push image (other refs, no latest)
         if: github.ref != 'refs/heads/main'
