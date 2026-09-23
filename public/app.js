@@ -4,6 +4,7 @@ const defaultSettings = {
   interval: 5000,
   metrics: { cpu: true, memory: true, disk: true, network: true, temp: true, uptime: true },
   showStopped: true,
+  showHidden: false,
 };
 
 function loadSettings() {
@@ -323,101 +324,6 @@ function renderHardware(data) {
 
 // ---------- rendering: containers ----------
 
-function groupCardHtml(g) {
-  const memPct = (g.memUsed != null && g.memLimit) ? (g.memUsed / g.memLimit) * 100 : null;
-
-  const statsBlock = g.runningCount > 0 ? `
-    <div class="c-stats">
-      <div class="c-stat">
-        <div class="c-stat-label">CPU</div>
-        <div class="c-stat-value">${g.cpuPct != null ? g.cpuPct.toFixed(1) + '%' : '\u2014'}</div>
-        <div class="c-stat-meter"><div class="c-stat-meter-fill" style="width:${Math.min(g.cpuPct || 0, 100)}%"></div></div>
-      </div>
-      <div class="c-stat">
-        <div class="c-stat-label">MEM</div>
-        <div class="c-stat-value">${g.memUsed != null ? fmtBytes(g.memUsed) : '\u2014'}</div>
-        <div class="c-stat-meter"><div class="c-stat-meter-fill" style="width:${Math.min(memPct || 0, 100)}%"></div></div>
-      </div>
-    </div>` : '';
-
-  let actionBtns;
-  if (g.runningCount === g.totalCount) {
-    actionBtns = `
-      <div class="c-actions">
-        <button class="c-btn c-btn--restart" data-group-action="restart" data-group="${escapeHtml(g.groupKey)}">restart all</button>
-        <button class="c-btn c-btn--stop" data-group-action="stop" data-group="${escapeHtml(g.groupKey)}">stop all</button>
-      </div>`;
-  } else if (g.runningCount === 0) {
-    actionBtns = `<button class="c-btn c-btn--start" data-group-action="start" data-group="${escapeHtml(g.groupKey)}">start all</button>`;
-  } else {
-    actionBtns = `
-      <div class="c-actions">
-        <button class="c-btn c-btn--start" data-group-action="start" data-group="${escapeHtml(g.groupKey)}">start rest</button>
-        <button class="c-btn c-btn--stop" data-group-action="stop" data-group="${escapeHtml(g.groupKey)}">stop all</button>
-      </div>`;
-  }
-
-  const iconUrl = appIcon(g.name, g.icon);
-  const groupEditKey = 'group:' + g.groupKey;
-
-  let nameHtml;
-  if (editingName === groupEditKey) {
-    nameHtml = `
-      <form class="c-edit-form" data-name="${escapeHtml(groupEditKey)}">
-        <input class="c-url-input" type="text" name="url"
-          value="${escapeHtml(g.appUrl || '')}"
-          placeholder="${escapeHtml(g.autoUrl || 'http://host:port')}"
-          autocomplete="off" spellcheck="false">
-        <button type="submit" class="c-edit-icon-btn c-edit-save" title="save" aria-label="save">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"></polyline></svg>
-        </button>
-        <button type="button" class="c-edit-icon-btn c-edit-cancel" data-action="cancel-url" title="cancel" aria-label="cancel">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-        </button>
-        ${g.urlOverridden ? `<button type="button" class="c-edit-icon-btn c-edit-reset" data-action="reset-url" data-name="${escapeHtml(groupEditKey)}" title="reset to auto-detected" aria-label="reset to auto-detected">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
-        </button>` : ''}
-      </form>`;
-  } else {
-    const safeAppUrl = isSafeUrl(g.appUrl) ? g.appUrl : null;
-    const link = safeAppUrl
-      ? `<a class="c-name-link" href="${escapeHtml(safeAppUrl)}" target="_blank" rel="noopener" title="open ${escapeHtml(g.name)}"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(g.name)}</span></a>`
-      : `<span class="c-name-link"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(g.name)}</span></span>`;
-    nameHtml = `
-      <span class="c-name">
-        ${link}
-        <button type="button" class="c-edit-icon-btn c-edit-trigger" data-action="edit-url" data-name="${escapeHtml(groupEditKey)}" title="edit link${g.urlOverridden ? ' (custom)' : ''}" aria-label="edit link">
-          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
-        </button>
-      </span>`;
-  }
-
-  const memberList = g.memberNames.join(', ');
-  // reuses the existing amber "transitioning" dot for "some but not all
-  // running" -- same "not fully settled, worth a glance" meaning, no new
-  // CSS needed
-  const dotState = g.runningCount === g.totalCount ? 'running' : (g.runningCount === 0 ? 'stopped' : 'restarting');
-
-  const metaBlock = `
-    <div class="c-meta">
-      <span title="containers in this group">${g.totalCount} services</span>
-      <span title="combined restart count">restarts ${g.restartCount ?? 0}</span>
-    </div>`;
-
-  return `
-    <div class="c-card ${g.runningCount === 0 ? 'is-stopped' : ''}" data-card-key="${escapeHtml('group:' + g.groupKey)}">
-      <div class="c-card-head">
-        <span class="dot ${dotClass(dotState)}"></span>
-        ${nameHtml}
-      </div>
-      <div class="c-image" title="${escapeHtml(memberList)}">${escapeHtml(memberList)}</div>
-      <div class="c-status">${g.runningCount}/${g.totalCount} running</div>
-      ${metaBlock}
-      ${statsBlock}
-      <div class="c-card-foot">${actionBtns}</div>
-    </div>`;
-}
-
 function containerCardHtml(c) {
   const cpuPct = c.cpuPct;
   const memPct = (c.memUsed != null && c.memLimit) ? (c.memUsed / c.memLimit) * 100 : null;
@@ -477,12 +383,20 @@ function containerCardHtml(c) {
     const link = safeAppUrl
       ? `<a class="c-name-link" href="${escapeHtml(safeAppUrl)}" target="_blank" rel="noopener" title="open ${escapeHtml(c.name)}"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.name)}</span></a>`
       : `<span class="c-name-link"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.name)}</span></span>`;
+    const hideBtn = c.hidden
+      ? `<button type="button" class="c-edit-icon-btn c-hide-trigger" data-action="unhide" data-name="${escapeHtml(c.name)}" title="unhide" aria-label="unhide">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        </button>`
+      : `<button type="button" class="c-edit-icon-btn c-hide-trigger" data-action="hide" data-name="${escapeHtml(c.name)}" title="hide from dashboard" aria-label="hide from dashboard">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+        </button>`;
     nameHtml = `
       <span class="c-name">
         ${link}
         <button type="button" class="c-edit-icon-btn c-edit-trigger" data-action="edit-url" data-name="${escapeHtml(c.name)}" title="edit link${hasOverride ? ' (custom)' : ''}" aria-label="edit link">
           <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path></svg>
         </button>
+        ${hideBtn}
       </span>`;
   }
 
@@ -493,8 +407,13 @@ function containerCardHtml(c) {
       <span title="restart count">restarts ${c.restartCount ?? 0}</span>
     </div>`;
 
+  const cardClasses = [
+    c.state !== 'running' ? 'is-stopped' : '',
+    c.hidden ? 'is-hidden' : '',
+  ].filter(Boolean).join(' ');
+
   return `
-    <div class="c-card ${c.state !== 'running' ? 'is-stopped' : ''}" data-card-key="${escapeHtml('container:' + c.id)}">
+    <div class="c-card ${cardClasses}" data-card-key="${escapeHtml('container:' + c.id)}">
       <div class="c-card-head">
         <span class="dot ${dotClass(c.state)}"></span>
         ${nameHtml}
@@ -507,12 +426,8 @@ function containerCardHtml(c) {
     </div>`;
 }
 
-function cardHtml(c) {
-  return c.kind === 'group' ? groupCardHtml(c) : containerCardHtml(c);
-}
-
 function cardKey(c) {
-  return c.kind === 'group' ? 'group:' + c.groupKey : 'container:' + c.id;
+  return 'container:' + c.id;
 }
 
 // captures everything about a card that determines its DOM *shape* --
@@ -520,12 +435,7 @@ function cardKey(c) {
 // the last render, the card can be patched in place (same nodes, new
 // values); if it changed, that one card gets rebuilt (not the whole grid).
 function cardSignature(c) {
-  if (c.kind === 'group') {
-    const bucket = c.runningCount === c.totalCount ? 'all' : (c.runningCount === 0 ? 'none' : 'partial');
-    const editing = editingName === 'group:' + c.groupKey;
-    return `group|${bucket}|${isSafeUrl(c.appUrl)}|${editing}`;
-  }
-  return `container|${c.state}|${editingName === c.name}|${isSafeUrl(c.appUrl)}`;
+  return `${c.state}|${editingName === c.name}|${isSafeUrl(c.appUrl)}|${!!c.hidden}`;
 }
 
 function patchStatsBlock(el, cpuPct, memUsed, memLimit) {
@@ -573,28 +483,9 @@ function patchContainerCard(el, c) {
 
   const editTrigger = el.querySelector('.c-edit-trigger');
   if (editTrigger) editTrigger.title = `edit link${c.urlOverridden ? ' (custom)' : ''}`;
-}
 
-function patchGroupCard(el, g) {
-  el.querySelector('.c-status').textContent = `${g.runningCount}/${g.totalCount} running`;
-  const metaSpans = el.querySelectorAll('.c-meta span');
-  if (metaSpans[0]) metaSpans[0].textContent = `${g.totalCount} services`;
-  if (metaSpans[1]) metaSpans[1].textContent = `restarts ${g.restartCount ?? 0}`;
-  const memberList = g.memberNames.join(', ');
-  const imgLine = el.querySelector('.c-image');
-  imgLine.textContent = memberList;
-  imgLine.title = memberList;
-
-  if (g.runningCount > 0) patchStatsBlock(el, g.cpuPct, g.memUsed, g.memLimit);
-  patchLinkAndIcon(el, g.name, g.appUrl, g.icon);
-
-  const editTrigger = el.querySelector('.c-edit-trigger');
-  if (editTrigger) editTrigger.title = `edit link${g.urlOverridden ? ' (custom)' : ''}`;
-}
-
-function patchCard(el, c) {
-  if (c.kind === 'group') patchGroupCard(el, c);
-  else patchContainerCard(el, c);
+  const hideTrigger = el.querySelector('.c-hide-trigger');
+  if (hideTrigger) hideTrigger.title = c.hidden ? 'unhide' : 'hide from dashboard';
 }
 
 // tracks the last render's ordered card keys and each card's structural
@@ -610,16 +501,14 @@ function renderContainers(list) {
   const grid = document.getElementById('container-grid');
   const countEl = document.getElementById('container-count');
 
-  // group cards represent multiple real containers -- count/filter by what's
-  // actually running underneath, not by how many cards are on screen
-  const isUp = c => c.kind === 'group' ? c.runningCount > 0 : c.state === 'running';
-  const visible = settings.showStopped ? list : list.filter(isUp);
-  const totalContainers = list.reduce((sum, c) => sum + (c.kind === 'group' ? c.totalCount : 1), 0);
-  const runningContainers = list.reduce((sum, c) => sum + (c.kind === 'group' ? c.runningCount : (c.state === 'running' ? 1 : 0)), 0);
+  const byState = settings.showStopped ? list : list.filter(c => c.state === 'running');
+  const visible = settings.showHidden ? byState : byState.filter(c => !c.hidden);
+  const totalContainers = list.length;
+  const runningContainers = list.filter(c => c.state === 'running').length;
   countEl.textContent = `${totalContainers} container${totalContainers === 1 ? '' : 's'} detected \u2014 ${runningContainers} running`;
 
   if (!visible.length) {
-    grid.innerHTML = '<div class="empty-state">no containers to show. check docker.sock is mounted, or enable "show stopped".</div>';
+    grid.innerHTML = '<div class="empty-state">no containers to show. check docker.sock is mounted, or enable \u201cshow stopped\u201d / \u201cshow hidden\u201d in settings.</div>';
     lastCardKeys = null;
     lastCardSignatures = new Map();
     return;
@@ -631,7 +520,7 @@ function renderContainers(list) {
     lastCardKeys.every((k, i) => k === keys[i]);
 
   if (!sameShape) {
-    grid.innerHTML = visible.map(cardHtml).join('');
+    grid.innerHTML = visible.map(containerCardHtml).join('');
     lastCardKeys = keys;
     lastCardSignatures = new Map(visible.map(c => [cardKey(c), cardSignature(c)]));
     return;
@@ -643,10 +532,10 @@ function renderContainers(list) {
     const el = grid.querySelector(`[data-card-key="${CSS.escape(key)}"]`);
     if (!el) return; // shouldn't happen given sameShape, but don't crash the poll loop if it does
     if (lastCardSignatures.get(key) !== sig) {
-      el.outerHTML = cardHtml(c);
+      el.outerHTML = containerCardHtml(c);
       lastCardSignatures.set(key, sig);
     } else {
-      patchCard(el, c);
+      patchContainerCard(el, c);
     }
   });
 }
@@ -671,26 +560,6 @@ async function controlContainer(id, action, btn) {
   }
 }
 
-async function controlGroup(g, action, btn) {
-  const original = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = action === 'start' ? 'starting\u2026' : action === 'restart' ? 'restarting\u2026' : 'stopping\u2026';
-  try {
-    const results = await Promise.allSettled(
-      g.memberIds.map(id => fetch(`/api/containers/${id}/${action}`, { method: 'POST' }))
-    );
-    const failedCount = results.filter(r => r.status === 'rejected' || !r.value.ok).length;
-    if (failedCount) {
-      throw new Error(`${failedCount} of ${g.memberIds.length} containers failed to ${action}`);
-    }
-    await pollOnce();
-  } catch (err) {
-    btn.textContent = original;
-    btn.disabled = false;
-    showError(`could not ${action} ${g.name}: ${err.message}`);
-  }
-}
-
 document.getElementById('container-grid').addEventListener('click', (e) => {
   const startStopBtn = e.target.closest('.c-btn[data-action]');
   if (startStopBtn) {
@@ -700,14 +569,11 @@ document.getElementById('container-grid').addEventListener('click', (e) => {
     return;
   }
 
-  const groupBtn = e.target.closest('.c-btn[data-group-action]');
-  if (groupBtn) {
-    const { groupAction, group } = groupBtn.dataset;
-    const g = lastContainers.find(c => c.kind === 'group' && c.groupKey === group);
-    if (!g) return;
-    if ((groupAction === 'stop' || groupAction === 'restart') &&
-        !confirm(`${groupAction === 'stop' ? 'Stop' : 'Restart'} all ${g.totalCount} containers in ${g.name}?`)) return;
-    controlGroup(g, groupAction, groupBtn);
+  const hideBtn = e.target.closest('[data-action="hide"], [data-action="unhide"]');
+  if (hideBtn) {
+    const { action, name } = hideBtn.dataset;
+    if (action === 'hide') hideContainer(name);
+    else unhideContainer(name);
     return;
   }
 
@@ -784,6 +650,32 @@ async function resetContainerUrl(name) {
   } catch (err) {
     showError(`could not reset link: ${err.message}`);
     renderContainers(lastContainers);
+  }
+}
+
+async function hideContainer(name) {
+  try {
+    const res = await fetch(`/api/containers/${encodeURIComponent(name)}/hide`, { method: 'PUT' });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'hide failed');
+    }
+    await pollOnce();
+  } catch (err) {
+    showError(`could not hide ${name}: ${err.message}`);
+  }
+}
+
+async function unhideContainer(name) {
+  try {
+    const res = await fetch(`/api/containers/${encodeURIComponent(name)}/hide`, { method: 'DELETE' });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'unhide failed');
+    }
+    await pollOnce();
+  } catch (err) {
+    showError(`could not unhide ${name}: ${err.message}`);
   }
 }
 
@@ -864,6 +756,7 @@ function initSettingsUI() {
   const closeBtn = document.getElementById('settings-close');
   const intervalSelect = document.getElementById('opt-interval');
   const stoppedCheckbox = document.getElementById('opt-show-stopped');
+  const hiddenCheckbox = document.getElementById('opt-show-hidden');
   const metricCheckboxes = document.querySelectorAll('input[data-metric]');
 
   // The "current password" reauth fields look like an ordinary login field
@@ -890,6 +783,7 @@ function initSettingsUI() {
 
   intervalSelect.value = String(settings.interval);
   stoppedCheckbox.checked = settings.showStopped;
+  hiddenCheckbox.checked = settings.showHidden;
   metricCheckboxes.forEach(cb => { cb.checked = !!settings.metrics[cb.dataset.metric]; });
 
   toggleBtn.addEventListener('click', () => {
@@ -909,6 +803,12 @@ function initSettingsUI() {
 
   stoppedCheckbox.addEventListener('change', () => {
     settings.showStopped = stoppedCheckbox.checked;
+    saveSettings(settings);
+    pollOnce();
+  });
+
+  hiddenCheckbox.addEventListener('change', () => {
+    settings.showHidden = hiddenCheckbox.checked;
     saveSettings(settings);
     pollOnce();
   });

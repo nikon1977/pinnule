@@ -1,6 +1,6 @@
 # Pinnule
 
-Current version 1.5.2
+Current version 1.6.0
 
 **A nimble, lightweight dashboard for your homelab.**
 
@@ -192,22 +192,28 @@ The container API exposes three URL-related values:
 * `autoUrl` — the automatically detected or Docker-label URL
 * `urlOverridden` — whether a custom URL is currently being used
 
-### Grouping multi-container apps
+### Hiding containers
 
-Containers started by the same `docker compose` stack are grouped into a single card instead of showing every service separately. Pinnule detects this using Docker's own `com.docker.compose.project` label, which Compose sets automatically — no configuration needed.
+Any container can be hidden from the dashboard by clicking the **eye icon** next to its link. This is a pure display preference — it doesn't stop, affect, or otherwise touch the container itself, just whether it shows up here.
 
-A group card shows:
+Hidden containers are left out of the dashboard by default. To see them again (so you can unhide one), enable **show hidden** in the settings drawer — hidden containers then appear with a dashed border and an open-eye icon to bring them back.
 
-* A combined running count (e.g. `4/5 running`)
-* Combined CPU and memory usage across every container in the stack
-* A link chosen from whichever member has a working URL (preferring an explicit `pinnule.url` override, then any auto-detected one)
-* Start/stop/restart controls that apply to every container in the stack at once
+Pinnule stores hidden containers in:
 
-A compose project with only one container is shown as a normal standalone card, not a group.
+```text
+/app/data/hidden-containers.json
+```
 
-Because `com.docker.compose.project` is usually just the name of the directory the `docker-compose.yml` file happens to live in, the group's display name can end up unhelpful (e.g. `docker-communityserver` for an OnlyOffice stack). Set a `pinnule.name` label on any one service in the stack to override it — see [`pinnule.name`](#pinnulename) below.
+The API provides endpoints for managing hidden containers:
 
-Group cards have their own **pencil icon**, same as standalone containers, for setting a custom link directly from the dashboard rather than relying on a `pinnule.url` label. This uses the same server-side storage as container links, under a `group:<compose-project-name>` key, so it survives restarts and redeployments the same way.
+```text
+PUT    /api/containers/:name/hide
+DELETE /api/containers/:name/hide
+```
+
+`PUT` hides a container. `DELETE` unhides it.
+
+Because this is keyed by container name in the same way as [custom links](#custom-container-links), a hide preference survives container rebuilds and redeployments too, as long as the name stays the same.
 
 ### Persistent application data
 
@@ -237,7 +243,6 @@ You can override the automatic behavior with optional Docker labels written into
 labels:
   - pinnule.url=http://192.168.1.230:8080
   - pinnule.icon=https://example.com/icon.png
-  - pinnule.name=OnlyOffice
 ```
 
 #### `pinnule.url`
@@ -251,10 +256,6 @@ Provides a custom icon URL.
 If no icon is specified, Pinnule automatically attempts to find a matching icon from the [Selfh.st Icons](https://selfh.st/icons/) collection.
 
 If an icon cannot be found, it is hidden cleanly rather than leaving a broken-image placeholder.
-
-#### `pinnule.name`
-
-Overrides the display name of a [multi-container app group](#grouping-multi-container-apps). Only relevant for containers that are part of a `docker compose` stack with more than one service — it has no effect on a standalone container. Set it on any one service in the stack; if more than one service sets it, the first one Pinnule encounters wins.
 
 ## 🎮 Controlling containers
 

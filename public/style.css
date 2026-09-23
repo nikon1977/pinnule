@@ -242,6 +242,7 @@ main { padding: 20px 22px 40px; }
   padding: 13px 15px;
 }
 .c-card.is-stopped { opacity: 0.55; }
+.c-card.is-hidden { border-style: dashed; }
 
 .c-card-head {
   display: flex;
