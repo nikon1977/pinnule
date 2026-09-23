@@ -88,6 +88,24 @@ function saveUrlOverrides(overrides) {
 
 let urlOverrides = loadUrlOverrides();
 
+const HIDDEN_FILE = path.join(DATA_DIR, 'hidden-containers.json');
+
+function loadHiddenContainers() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(HIDDEN_FILE, 'utf8'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveHiddenContainers(hidden) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(HIDDEN_FILE, JSON.stringify(hidden, null, 2));
+}
+
+let hiddenContainers = loadHiddenContainers();
+
 // ---- auth: single local account, credentials + session secret kept on the
 // persisted data volume, never in source control or logs ----
 
@@ -597,97 +615,6 @@ async function getContainerMeta(id, fallbackLabels) {
   return meta;
 }
 
-// Containers started by the same `docker compose` stack all carry the same
-// com.docker.compose.project label automatically -- no extra config needed.
-// Group them into one card instead of cluttering the grid with every
-// service of a multi-container app (onlyoffice's five containers, a
-// db+cache+app stack, etc). A project with only one member is left as a
-// normal standalone container -- most single-service compose projects
-// shouldn't be wrapped for no reason.
-function groupByComposeProject(enriched, urlOverrides) {
-  const groups = new Map();
-  const standalone = [];
-
-  for (const item of enriched) {
-    if (!item.composeProject) {
-      standalone.push(item);
-      continue;
-    }
-    if (!groups.has(item.composeProject)) groups.set(item.composeProject, []);
-    groups.get(item.composeProject).push(item);
-  }
-
-  const result = standalone.map(item => ({ kind: 'container', ...item }));
-
-  for (const [project, members] of groups) {
-    if (members.length === 1) {
-      result.push({ kind: 'container', ...members[0] });
-      continue;
-    }
-
-    const runningCount = members.filter(m => m.state === 'running').length;
-    const totalCount = members.length;
-    // pick one member to represent the group's link/icon: prefer an
-    // explicit override, then whichever auto-detected a working URL at all
-    // (the actual web UI, typically -- a db or search container usually
-    // won't have published ports pinnule would pick up), else just the first
-    const primary =
-      members.find(m => m.urlOverridden) ||
-      members.find(m => m.appUrl) ||
-      members[0];
-    const anyStats = members.some(m => m.cpuPct != null);
-    const cpuPctSummed = anyStats ? members.reduce((sum, m) => sum + (m.cpuPct || 0), 0) : null;
-    // each member's cpuPct is "% of one core" (docker stats convention);
-    // summed across N containers that's no longer intuitive to read the
-    // same way -- convert to "% of total host capacity" instead, which is
-    // what a "how much of my machine is this whole stack using" figure
-    // should actually mean. Math.min as a safety net for the sampling-
-    // timing jitter between each container's own stats snapshot.
-    const cpuPct = cpuPctSummed != null ? Math.min(cpuPctSummed / HOST_CORES, 100) : null;
-    const memUsed = anyStats ? members.reduce((sum, m) => sum + (m.memUsed || 0), 0) : null;
-    // memory *limit* isn't additive across containers on the same host when
-    // none of them have an explicit per-container limit set (the common
-    // case) -- they'd all just report the host's total RAM, and summing
-    // that five times would be nonsense. Max is the sane aggregate either way.
-    const memLimit = Math.max(0, ...members.map(m => m.memLimit || 0)) || null;
-    const startedAt = members.map(m => m.startedAt).filter(Boolean).sort()[0] || null;
-    const createdValues = members.map(m => m.created).filter(v => v != null);
-    // com.docker.compose.project is usually just whatever directory the
-    // compose file lives in (e.g. "docker-communityserver"), not a name
-    // anyone chose on purpose -- a pinnule.name label on any member of the
-    // stack overrides the display name without needing to rename the
-    // actual compose project
-    const displayName = (members.find(m => m.nameOverride) || {}).nameOverride || project;
-    // namespaced so this can never collide with an actual container name in
-    // the same urlOverrides store; project (not displayName) is the key,
-    // since that's the compose stack's real stable identity -- the display
-    // name can change via pinnule.name without this override needing to move
-    const groupOverrideKey = 'group:' + project;
-    const hasGroupOverride = Object.prototype.hasOwnProperty.call(urlOverrides, groupOverrideKey);
-
-    result.push({
-      kind: 'group',
-      name: displayName,
-      groupKey: project,
-      memberIds: members.map(m => m.id),
-      memberNames: members.map(m => m.name),
-      runningCount,
-      totalCount,
-      appUrl: hasGroupOverride ? urlOverrides[groupOverrideKey] : primary.appUrl,
-      autoUrl: primary.appUrl,
-      urlOverridden: hasGroupOverride,
-      icon: primary.icon,
-      cpuPct, memUsed, memLimit,
-      restartCount: members.reduce((sum, m) => sum + (m.restartCount || 0), 0),
-      startedAt,
-      created: createdValues.length ? Math.min(...createdValues) : null,
-    });
-  }
-
-  result.sort((a, b) => a.name.localeCompare(b.name));
-  return result;
-}
-
 app.get('/api/containers', requireAuth, async (req, res) => {
   try {
     const list = await docker.listContainers({ all: true });
@@ -734,12 +661,15 @@ app.get('/api/containers', requireAuth, async (req, res) => {
       const hasOverride = Object.prototype.hasOwnProperty.call(urlOverrides, name);
       const appUrl = hasOverride ? urlOverrides[name] : labelUrl;
       const icon = labels['pinnule.icon'] || null;
-      const nameOverride = labels['pinnule.name'] || null;
-      const composeProject = labels['com.docker.compose.project'] || null;
+      // cosmetic only -- name stays the real container name throughout (API
+      // calls, url-override/hidden storage keys, editingName tracking all
+      // still use it), this only changes what's shown to the user
+      const displayName = labels['pinnule.name'] || name;
 
       return {
         id: c.Id.slice(0, 12),
         name,
+        displayName,
         image: c.Image,
         state: c.State,
         status: c.Status,
@@ -748,16 +678,16 @@ app.get('/api/containers', requireAuth, async (req, res) => {
         autoUrl: labelUrl,
         urlOverridden: hasOverride,
         icon,
-        nameOverride,
         restartCount,
         startedAt,
         created: c.Created,
         cpuPct, memUsed, memLimit,
-        composeProject,
+        hidden: hiddenContainers.includes(name),
       };
     }));
 
-    res.json(groupByComposeProject(enriched, urlOverrides));
+    enriched.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -904,6 +834,36 @@ app.delete('/api/containers/:name/url', requireAuth, (req, res) => {
   try {
     saveUrlOverrides(urlOverrides);
   } catch (err) {
+    return res.status(500).json({ error: `could not save: ${err.message}` });
+  }
+  res.json({ ok: true, name });
+});
+
+// ---- hidden containers (keyed by name, same persistence pattern as URL
+// overrides, so a hide preference survives container rebuilds/redeploys) ----
+
+app.put('/api/containers/:name/hide', requireAuth, (req, res) => {
+  const name = req.params.name;
+  if (!hiddenContainers.includes(name)) {
+    hiddenContainers.push(name);
+    try {
+      saveHiddenContainers(hiddenContainers);
+    } catch (err) {
+      hiddenContainers = hiddenContainers.filter(n => n !== name);
+      return res.status(500).json({ error: `could not save: ${err.message}` });
+    }
+  }
+  res.json({ ok: true, name });
+});
+
+app.delete('/api/containers/:name/hide', requireAuth, (req, res) => {
+  const name = req.params.name;
+  const wasHidden = hiddenContainers.includes(name);
+  hiddenContainers = hiddenContainers.filter(n => n !== name);
+  try {
+    saveHiddenContainers(hiddenContainers);
+  } catch (err) {
+    if (wasHidden) hiddenContainers.push(name);
     return res.status(500).json({ error: `could not save: ${err.message}` });
   }
   res.json({ ok: true, name });
