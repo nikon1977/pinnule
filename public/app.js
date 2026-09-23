@@ -346,11 +346,11 @@ function containerCardHtml(c) {
   if (c.state === 'running') {
     actionBtns = `
       <div class="c-actions">
-        <button class="c-btn c-btn--restart" data-action="restart" data-id="${c.id}" data-name="${c.name}">restart</button>
-        <button class="c-btn c-btn--stop" data-action="stop" data-id="${c.id}" data-name="${c.name}">stop</button>
+        <button class="c-btn c-btn--restart" data-action="restart" data-id="${c.id}" data-name="${escapeHtml(c.displayName)}">restart</button>
+        <button class="c-btn c-btn--stop" data-action="stop" data-id="${c.id}" data-name="${escapeHtml(c.displayName)}">stop</button>
       </div>`;
   } else if (c.state === 'exited' || c.state === 'created' || c.state === 'dead') {
-    actionBtns = `<button class="c-btn c-btn--start" data-action="start" data-id="${c.id}" data-name="${c.name}">start</button>`;
+    actionBtns = `<button class="c-btn c-btn--start" data-action="start" data-id="${c.id}" data-name="${escapeHtml(c.displayName)}">start</button>`;
   } else {
     actionBtns = `<span class="c-btn c-btn--disabled">${c.state}\u2026</span>`;
   }
@@ -358,7 +358,7 @@ function containerCardHtml(c) {
   const autoUrl = c.autoUrl != null ? c.autoUrl : c.appUrl;
   const hasOverride = !!c.urlOverridden;
   const appUrl = c.appUrl;
-  const iconUrl = appIcon(c.name, c.icon);
+  const iconUrl = appIcon(c.displayName, c.icon);
 
   let nameHtml;
   if (editingName === c.name) {
@@ -381,8 +381,8 @@ function containerCardHtml(c) {
   } else {
     const safeAppUrl = isSafeUrl(appUrl) ? appUrl : null;
     const link = safeAppUrl
-      ? `<a class="c-name-link" href="${escapeHtml(safeAppUrl)}" target="_blank" rel="noopener" title="open ${escapeHtml(c.name)}"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.name)}</span></a>`
-      : `<span class="c-name-link"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.name)}</span></span>`;
+      ? `<a class="c-name-link" href="${escapeHtml(safeAppUrl)}" target="_blank" rel="noopener" title="open ${escapeHtml(c.displayName)}"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.displayName)}</span></a>`
+      : `<span class="c-name-link"><img class="c-icon" src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.classList.add('is-broken')"><span>${escapeHtml(c.displayName)}</span></span>`;
     const hideBtn = c.hidden
       ? `<button type="button" class="c-edit-icon-btn c-hide-trigger" data-action="unhide" data-name="${escapeHtml(c.name)}" title="unhide" aria-label="unhide">
           <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
@@ -479,13 +479,15 @@ function patchContainerCard(el, c) {
   imgLine.title = c.image;
 
   if (c.state === 'running') patchStatsBlock(el, c.cpuPct, c.memUsed, c.memLimit);
-  patchLinkAndIcon(el, c.name, c.appUrl, c.icon);
+  patchLinkAndIcon(el, c.displayName, c.appUrl, c.icon);
 
   const editTrigger = el.querySelector('.c-edit-trigger');
   if (editTrigger) editTrigger.title = `edit link${c.urlOverridden ? ' (custom)' : ''}`;
 
   const hideTrigger = el.querySelector('.c-hide-trigger');
   if (hideTrigger) hideTrigger.title = c.hidden ? 'unhide' : 'hide from dashboard';
+
+  el.querySelectorAll('.c-btn[data-action][data-name]').forEach(btn => { btn.dataset.name = c.displayName; });
 }
 
 // tracks the last render's ordered card keys and each card's structural
