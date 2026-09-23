@@ -661,10 +661,15 @@ app.get('/api/containers', requireAuth, async (req, res) => {
       const hasOverride = Object.prototype.hasOwnProperty.call(urlOverrides, name);
       const appUrl = hasOverride ? urlOverrides[name] : labelUrl;
       const icon = labels['pinnule.icon'] || null;
+      // cosmetic only -- name stays the real container name throughout (API
+      // calls, url-override/hidden storage keys, editingName tracking all
+      // still use it), this only changes what's shown to the user
+      const displayName = labels['pinnule.name'] || name;
 
       return {
         id: c.Id.slice(0, 12),
         name,
+        displayName,
         image: c.Image,
         state: c.State,
         status: c.Status,
@@ -681,7 +686,7 @@ app.get('/api/containers', requireAuth, async (req, res) => {
       };
     }));
 
-    enriched.sort((a, b) => a.name.localeCompare(b.name));
+    enriched.sort((a, b) => a.displayName.localeCompare(b.displayName));
     res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });

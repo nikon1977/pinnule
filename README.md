@@ -1,6 +1,6 @@
 # Pinnule
 
-Current version 1.6.0
+Current version 1.6.1
 
 **A nimble, lightweight dashboard for your homelab.**
 
@@ -243,6 +243,7 @@ You can override the automatic behavior with optional Docker labels written into
 labels:
   - pinnule.url=http://192.168.1.230:8080
   - pinnule.icon=https://example.com/icon.png
+  - pinnule.name=OnlyOffice
 ```
 
 #### `pinnule.url`
@@ -256,6 +257,10 @@ Provides a custom icon URL.
 If no icon is specified, Pinnule automatically attempts to find a matching icon from the [Selfh.st Icons](https://selfh.st/icons/) collection.
 
 If an icon cannot be found, it is hidden cleanly rather than leaving a broken-image placeholder.
+
+#### `pinnule.name`
+
+Overrides the display name shown on the dashboard. Purely cosmetic — the container's real name (used for hiding, custom links, and Docker API calls) is unaffected, so this is safe to set or change at any time without disturbing anything else. Also used as the icon-lookup term when no explicit `pinnule.icon` is set, which can give better auto-detected icon matches than a container's real name (e.g. `pinnule.name=OnlyOffice` on a container actually named `onlyoffice-document-server`).
 
 ## 🎮 Controlling containers
 
