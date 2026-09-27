@@ -1,6 +1,6 @@
 # Pinnule
 
-Current version 1.6.1
+Current version 1.6.3
 
 **A nimble, lightweight dashboard for your homelab.**
 
@@ -73,6 +73,25 @@ https://192.168.1.230:4443
 ```
 
 Pinnule serves itself over HTTPS with a self-signed certificate it generates on first run (and reuses on every restart after that, so your browser's "trust this certificate" exception keeps working). Your browser will warn that the certificate isn't from a recognized authority the first time you connect — that's expected for a self-signed cert on a LAN-only app; proceed past the warning the same way you would for any other self-signed service on your network.
+
+### Using a reverse proxy
+
+By default, plain HTTP (port 4000) doesn't serve the app — it redirects to Pinnule's own HTTPS port (4443), so a login password is never sent in cleartext.
+
+This gets in the way if you're putting Pinnule behind a reverse proxy (Nginx Proxy Manager, Traefik, Caddy, etc.) configured the normal way — proxy terminates HTTPS at the edge, forwards plain HTTP internally to the app. Pinnule's own redirect sends the browser to connect *directly* to port 4443, bypassing the proxy entirely; if that port isn't reachable from wherever the browser actually is (often exactly the point of running a proxy — keeping only its own ports open), the request just hangs with no useful error.
+
+Set `DISABLE_HTTPS_REDIRECT=true` to serve the app directly over plain HTTP on port 4000 instead, and point your proxy at that port:
+
+```yaml
+services:
+  pinnule:
+    image: ghcr.io/nikon1977/pinnule:latest
+    environment:
+      - DISABLE_HTTPS_REDIRECT=true
+    # ...rest of the compose file unchanged
+```
+
+Port 4443 keeps working as normal alongside this, in case you ever want to reach Pinnule directly.
 
 ### Updating Pinnule
 
