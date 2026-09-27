@@ -253,8 +253,13 @@ const app = express();
 // trust proxy should be re-added scoped to that proxy's actual address.
 app.use(express.json());
 
+// explicit reference to the store, rather than letting express-session
+// create its own implicit one, so the periodic prune below can reach it
+const sessionStore = new session.MemoryStore();
+
 app.use(session({
   name: 'pinnule.sid',
+  store: sessionStore,
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
@@ -266,6 +271,17 @@ app.use(session({
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days, refreshed on activity
   },
 }));
+
+// MemoryStore only checks a session's expiry when something actually reads
+// it (get/all/touch, verified against expressjs/session's own source) -- a
+// session that simply lapses client-side (tab closed, cookie expired) with
+// no further requests is never read again, so it just sits here forever.
+// .all() checks every stored session's expiry internally and deletes any
+// that have passed as a side effect of reading them, so periodically
+// calling it (result unused) is the entire fix -- no separate expiry
+// check needed on our end.
+const SESSION_PRUNE_INTERVAL_MS = 60 * 60 * 1000; // hourly is plenty for sessions that live hours-to-weeks
+setInterval(() => sessionStore.all(() => {}), SESSION_PRUNE_INTERVAL_MS);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
