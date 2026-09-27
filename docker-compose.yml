@@ -8,6 +8,11 @@ services:
     network_mode: host
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
     logging:
       driver: json-file
       options:
