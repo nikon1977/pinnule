@@ -6,8 +6,6 @@ services:
     container_name: pinnule
     restart: unless-stopped
     network_mode: host
-<<<<<<< HEAD
-=======
     security_opt:
       - no-new-privileges:true
     logging:
@@ -15,7 +13,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
->>>>>>> bbe4cae (Apply low-risk Compose hardening: explicit project name, log rotation, no-new-privileges)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - pinnule_data:/app/data
