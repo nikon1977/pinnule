@@ -34,12 +34,27 @@ cd ~/pinnule
 Create `docker-compose.yml`:
 
 ```yaml
+<<<<<<< HEAD
+=======
+name: pinnule
+
+>>>>>>> bbe4cae (Apply low-risk Compose hardening: explicit project name, log rotation, no-new-privileges)
 services:
   pinnule:
     image: ghcr.io/nikon1977/pinnule:latest
     container_name: pinnule
     restart: unless-stopped
     network_mode: host
+<<<<<<< HEAD
+=======
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+>>>>>>> bbe4cae (Apply low-risk Compose hardening: explicit project name, log rotation, no-new-privileges)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - pinnule_data:/app/data
@@ -374,6 +389,36 @@ This allows Pinnule to inspect the host filesystem without giving it write acces
 
 **Nothing inside the container can write to the host through this mount.**
 
+<<<<<<< HEAD
+=======
+## 🔧 Further hardening (optional, test first)
+
+The compose file above already includes a few low-risk hardening defaults (`no-new-privileges`, log rotation). Two more are worth considering, but aren't included by default because whether they work depends on your exact host/kernel — test locally before relying on them:
+
+**Drop Linux capabilities.** Pinnule doesn't bind to a privileged port, doesn't need to change ownership of files, and doesn't need anything else a typical Linux capability grants — so it should be safe to drop them all:
+
+```yaml
+services:
+  pinnule:
+    cap_drop:
+      - ALL
+```
+
+**Read-only root filesystem.** Every file Pinnule writes (the TLS cert, `auth.json`, the session secret, custom link/hide overrides) already lives under `/app/data`, which is its own separate volume mount — so in principle nothing else needs to be writable:
+
+```yaml
+services:
+  pinnule:
+    read_only: true
+    tmpfs:
+      - /tmp
+```
+
+If either of these breaks something, the fastest way to find out why is `docker compose logs pinnule` right after starting it — a permission error there will point at the exact path that needed to be writable and wasn't.
+
+One honest limitation worth being direct about: since Pinnule needs access to `/var/run/docker.sock` to function, a compromise of Pinnule itself is roughly equivalent to root on the host, regardless of any of the hardening above — the Docker socket can be used to launch a new, fully-privileged container that undoes any of these restrictions. The mitigations that actually matter here are the ones around Pinnule's own attack surface: everything is behind authentication, and the Docker API calls Pinnule makes are narrow and validated (start/stop/restart a specific, already-existing container by a checked ID — never arbitrary commands).
+
+>>>>>>> bbe4cae (Apply low-risk Compose hardening: explicit project name, log rotation, no-new-privileges)
 ## 🌡️ If TEMP shows `n/a`
 
 Temperature monitoring depends on what sensors your hardware and kernel expose through:
