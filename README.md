@@ -10,45 +10,45 @@ It automatically discovers running containers, displays system statistics, and p
 
 <table>
   <tr>
-    <td>
-      <p align="center"></p>
-      <img src="screenshots/ss1.png" alt="ss1" width="300">
+    <td align="center">
+      <img src="screenshots/ss1.png" width="300"><br>
+      <sub>Dashboard login/sub>
     </td>
-    <td>
-      <p align="center"></p>
-      <img src="screenshots/ss2.png" alt="ss2" width="300">
+    <td align="center">
+      <img src="screenshots/ss2.png" width="300"><br>
+      <sub>Container details</sub>
     </td>
-    <td>
-      <p align="center"></p>
-      <img src="screenshots/ss3.png" alt="ss3" width="300">
+    <td align="center">
+      <img src="screenshots/ss3.png" width="300"><br>
+      <sub>Settings panel</sub>
     </td>
-    <td>
-      <p align="center"></p>
-      <img src="screenshots/ss4.png" alt="ss4" width="300">
+    <td align="center">
+      <img src="screenshots/ss4.png" width="300"><br>
+      <sub>Log viewer</sub>
     </td>
-    <td>
-      <p align="center"></p>
-      <img src="screenshots/ss5.jpg" alt="ss5" width="160">
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="screenshots/ss5.jpg" width="160"><br>
+      <sub>Mobile login</sub>
     </td>
-    <td>
-      <p align="center"></p>
-      <img src="screenshots/ss6.jpg" alt="ss6" width="160">
+    <td align="center">
+      <img src="screenshots/ss6.jpg" width="160"><br>
+      <sub>Mobile — container</sub>
     </td>
-    <td>
-      <p align="center"></p>
-      <img src="screenshots/ss7.jpg" alt="ss7" width="160">
+    <td align="center">
+      <img src="screenshots/ss7.jpg" width="160"><br>
+      <sub>Mobile — settings</sub>
     </td>
-    <td>
-      <p align="center"></p>
-      <img src="screenshots/ss8.jpg" alt="ss8" width="160">
+    <td align="center">
+      <img src="screenshots/ss8.jpg" width="160"><br>
+      <sub>Mobile — container logs</sub>
     </td>
   </tr>
 </table>
 
 
-> **Built entirely through vibe coding with multiple AI agents.**
->
-> It's very much a work in progress, but it's already fully functional and useful.
+> **Built mostly through vibe coding with multiple AI agents.**
 
 Why? I wanted a homepage that links to my containers and shows basic server stats.
 
