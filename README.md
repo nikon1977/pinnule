@@ -8,7 +8,43 @@ Pinnule is a lightweight front-facing portal that sits on top of your local infr
 
 It automatically discovers running containers, displays system statistics, and provides quick access to your applications — with minimal configuration.
 
-![Pinnule dashboard](screenshots/pinnule.png)
+<table>
+  <tr>
+    <td>
+      <p align="center"><b>ss1</b></p>
+      <img src="screenshots/ss1.png" alt="ss1" width="250">
+    </td>
+    <td>
+      <p align="center"><b>ss2</b></p>
+      <img src="screenshots/ss2.png" alt="ss2" width="250">
+    </td>
+    <td>
+      <p align="center"><b>ss3</b></p>
+      <img src="screenshots/ss3.png" alt="ss3" width="250">
+    </td>
+    <td>
+      <p align="center"><b>ss4</b></p>
+      <img src="screenshots/ss4.png" alt="ss4" width="250">
+    </td>
+    <td>
+      <p align="center"><b>ss5</b></p>
+      <img src="screenshots/ss5.png" alt="ss5" width="250">
+    </td>
+    <td>
+      <p align="center"><b>ss6</b></p>
+      <img src="screenshots/ss6.png" alt="ss6" width="250">
+    </td>
+    <td>
+      <p align="center"><b>ss7</b></p>
+      <img src="screenshots/ss7.png" alt="ss7" width="250">
+    </td>
+    <td>
+      <p align="center"><b>ss8</b></p>
+      <img src="screenshots/ss8.png" alt="ss8" width="250">
+    </td>
+  </tr>
+</table>
+
 
 > **Built entirely through vibe coding with multiple AI agents.**
 >
