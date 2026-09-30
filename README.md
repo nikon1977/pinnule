@@ -28,19 +28,19 @@ It automatically discovers running containers, displays system statistics, and p
     </td>
     <td>
       <p align="center"></p>
-      <img src="screenshots/ss5.png" alt="ss5" width="160">
+      <img src="screenshots/ss5.jpg" alt="ss5" width="160">
     </td>
     <td>
       <p align="center"></p>
-      <img src="screenshots/ss6.png" alt="ss6" width="160">
+      <img src="screenshots/ss6.jpg" alt="ss6" width="160">
     </td>
     <td>
       <p align="center"></p>
-      <img src="screenshots/ss7.png" alt="ss7" width="160">
+      <img src="screenshots/ss7.jpg" alt="ss7" width="160">
     </td>
     <td>
       <p align="center"></p>
-      <img src="screenshots/ss8.png" alt="ss8" width="160">
+      <img src="screenshots/ss8.jpg" alt="ss8" width="160">
     </td>
   </tr>
 </table>
