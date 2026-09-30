@@ -12,7 +12,7 @@ It automatically discovers running containers, displays system statistics, and p
   <tr>
     <td align="center">
       <img src="screenshots/ss1.png" width="300"><br>
-      <sub>Dashboard login/sub>
+      <sub>Dashboard login</sub>
     </td>
     <td align="center">
       <img src="screenshots/ss2.png" width="300"><br>
