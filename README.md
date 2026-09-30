@@ -12,35 +12,35 @@ It automatically discovers running containers, displays system statistics, and p
   <tr>
     <td>
       <p align="center"></p>
-      <img src="screenshots/ss1.png" alt="ss1" width="250">
+      <img src="screenshots/ss1.png" alt="ss1" width="300">
     </td>
     <td>
       <p align="center"></p>
-      <img src="screenshots/ss2.png" alt="ss2" width="250">
-    </td>
-    <td>
-      <p align="center">/p>
-      <img src="screenshots/ss3.png" alt="ss3" width="250">
+      <img src="screenshots/ss2.png" alt="ss2" width="300">
     </td>
     <td>
       <p align="center"></p>
-      <img src="screenshots/ss4.png" alt="ss4" width="250">
+      <img src="screenshots/ss3.png" alt="ss3" width="300">
     </td>
     <td>
       <p align="center"></p>
-      <img src="screenshots/ss5.png" alt="ss5" width="250">
+      <img src="screenshots/ss4.png" alt="ss4" width="300">
     </td>
     <td>
       <p align="center"></p>
-      <img src="screenshots/ss6.png" alt="ss6" width="250">
+      <img src="screenshots/ss5.png" alt="ss5" width="160">
     </td>
     <td>
       <p align="center"></p>
-      <img src="screenshots/ss7.png" alt="ss7" width="250">
+      <img src="screenshots/ss6.png" alt="ss6" width="160">
     </td>
     <td>
       <p align="center"></p>
-      <img src="screenshots/ss8.png" alt="ss8" width="250">
+      <img src="screenshots/ss7.png" alt="ss7" width="160">
+    </td>
+    <td>
+      <p align="center"></p>
+      <img src="screenshots/ss8.png" alt="ss8" width="160">
     </td>
   </tr>
 </table>
