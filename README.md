@@ -1,6 +1,6 @@
 # Pinnule
 
-Current version 1.6.3
+Current version 1.7.0
 
 **A nimble, lightweight dashboard for your homelab.**
 
@@ -297,7 +297,7 @@ Overrides the display name shown on the dashboard. Purely cosmetic — the conta
 
 ## 🎮 Controlling containers
 
-Each container card includes a start/stop and restart control.
+Each container card includes a start/stop and restart control, plus a **logs** button.
 
 ### Start
 
@@ -310,6 +310,12 @@ Stopping a container requires confirmation because it can interrupt a running ap
 ### Restart
 
 Restarting a container requires confirmation because it can interrupt a running application.
+
+### Logs
+
+The **logs** button expands the card into a full-screen view of that container's recent output (the last 500 lines, both stdout and stderr, most recent at the bottom), then shrinks back to the card's original position when closed. Available regardless of whether the container is running — useful for checking why something stopped or crashed, not just what a running one is currently doing.
+
+Use the refresh icon in the log view to fetch the latest output, `Esc` or the close icon to exit.
 
 ## 🌐 Why host networking rather than a Docker `ports:` mapping?
 

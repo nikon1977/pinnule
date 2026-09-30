@@ -329,6 +329,7 @@ a.c-name-link:hover { color: var(--accent); }
 .c-card-foot {
   display: flex;
   justify-content: flex-end;
+  gap: 6px;
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--border-soft);
@@ -349,6 +350,7 @@ a.c-name-link:hover { color: var(--accent); }
 .c-btn--stop:hover { color: var(--bad); border-color: var(--bad); }
 .c-btn--start:hover { color: var(--good); border-color: var(--good); }
 .c-btn--restart:hover { color: var(--warn); border-color: var(--warn); }
+.c-btn--logs:hover { color: var(--accent); border-color: var(--accent); }
 .c-btn:disabled { opacity: 0.5; cursor: default; }
 .c-btn--disabled {
   font-size: 10.5px;
@@ -638,3 +640,77 @@ body.auth-pending main {
 .mini-status.ok { color: var(--good); border: 1px solid var(--good); }
 .mini-status.err { color: var(--bad); border: 1px solid var(--bad); }
 .mini-status[hidden] { display: none; }
+
+/* ---------- logs overlay ---------- */
+
+.logs-overlay {
+  position: fixed;
+  z-index: 1000;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: top 0.25s ease, left 0.25s ease, width 0.25s ease, height 0.25s ease;
+}
+.logs-overlay--expanded {
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+}
+
+.logs-overlay-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+.logs-overlay-title {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.logs-overlay-btns {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.logs-overlay-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--panel-raised);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.logs-overlay-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+.logs-overlay-content {
+  flex: 1;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg);
+}

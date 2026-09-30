@@ -832,6 +832,52 @@ app.post('/api/containers/:id/restart', requireAuth, async (req, res) => {
   }
 });
 
+// Docker's log API multiplexes stdout/stderr into one stream, each chunk
+// prefixed with an 8-byte header (byte 0: 1=stdout/2=stderr, bytes 4-7:
+// big-endian payload length) -- but only when the container has no TTY
+// attached. A TTY container's logs are already plain text with no framing,
+// and running this demux against that would corrupt it by misreading real
+// log bytes as fake frame headers. Callers must check Config.Tty first.
+function demuxLogBuffer(buffer) {
+  const parts = [];
+  let offset = 0;
+  while (offset + 8 <= buffer.length) {
+    const size = buffer.readUInt32BE(offset + 4);
+    offset += 8;
+    if (size < 0 || offset + size > buffer.length) break; // truncated/malformed, stop rather than misread
+    parts.push(buffer.slice(offset, offset + size).toString('utf8'));
+    offset += size;
+  }
+  return parts.join('');
+}
+
+const LOG_TAIL_LINES = 500;
+
+app.get('/api/containers/:id/logs', requireAuth, async (req, res) => {
+  if (!isValidContainerId(req.params.id)) {
+    return res.status(400).json({ error: 'invalid container id' });
+  }
+  try {
+    const container = docker.getContainer(req.params.id);
+    const info = await container.inspect();
+    const rawLogs = await container.logs({
+      stdout: true,
+      stderr: true,
+      tail: LOG_TAIL_LINES,
+      timestamps: true,
+    });
+    const text = info.Config && info.Config.Tty
+      ? rawLogs.toString('utf8')
+      : demuxLogBuffer(rawLogs);
+    res.json({ logs: text });
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({ error: 'container not found' });
+    }
+    res.status(500).json({ error: `could not fetch logs: ${err.message}` });
+  }
+});
+
 // ---- custom app URLs (keyed by container name, persisted to disk) ----
 
 app.put('/api/containers/:name/url', requireAuth, (req, res) => {
