@@ -38,11 +38,11 @@ It automatically discovers running containers, displays system statistics, and p
     </td>
     <td align="center">
       <img src="screenshots/ss7.jpg" width="160"><br>
-      <sub>Mobile — settings</sub>
+      <sub>Mobile — container logs/sub>
     </td>
     <td align="center">
       <img src="screenshots/ss8.jpg" width="160"><br>
-      <sub>Mobile — container logs</sub>
+      <sub>Mobile — settings</sub>
     </td>
   </tr>
 </table>
