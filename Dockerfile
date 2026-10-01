@@ -15,6 +15,8 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY server.js ./
+COPY lib ./lib
+COPY routes ./routes
 COPY public ./public
 ENV PORT=4000
 ENV HTTPS_PORT=4443

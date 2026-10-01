@@ -1,6 +1,6 @@
 # Pinnule
 
-Current version 1.7.0
+Current version 1.7.1
 
 **A nimble, lightweight dashboard for your homelab.**
 
@@ -457,22 +457,33 @@ This is harmless and does not affect the rest of Pinnule.
 
 ## 🛠️ Extending Pinnule
 
-The project is intentionally simple and easy to modify.
+The project main files were getting to large to follw so I split these down to make it easier to follow.
 
-### `server.js`
-
-Provides the backend API:
+The backend is split by concern:
 
 ```text
-/api/containers
-/api/system
+server.js            -- app wiring: middleware, mounts the routers below, starts the servers
+lib/docker.js         -- Docker client, container id/url validation, port picking, log demuxing
+lib/stores.js          -- persisted JSON state: auth, url overrides, hidden containers, session secret
+lib/rate-limit.js       -- login/recovery brute-force guard
+lib/session.js          -- session length/validity, the requireAuth middleware
+lib/tls.js             -- self-signed certificate generation
+routes/auth.js          -- /api/auth/*
+routes/containers.js     -- /api/containers, start/stop/restart/logs, url overrides, hide/unhide
+routes/system.js        -- /api/system
 ```
 
-Add new backend information here first.
+The frontend is similarly split under `public/js/`:
 
-### `public/app.js`
-
-Polls the API and updates the dashboard.
+```text
+public/js/format.js     -- display/formatting helpers (byte sizes, uptime, icons)
+public/js/settings.js    -- settings storage + the settings drawer
+public/js/hardware.js    -- the hardware stats strip
+public/js/containers.js   -- container cards: rendering, start/stop/restart, links, hide/show
+public/js/logs.js        -- the full-screen logs overlay
+public/js/app.js        -- polling loop, error banner, startup
+public/js/auth.js       -- login/setup/recovery
+```
 
 ### `public/style.css`
 
@@ -484,7 +495,7 @@ CSS custom properties are located near the top of the file, making it easy to ch
 
 Pinnule was built using a **vibe-coding workflow with multiple AI agents**.
 
-The project is intentionally kept relatively small and straightforward so that it remains easy to understand, modify and experiment with.
+The project is kept relatively small and straightforward so that it remains easy to understand, modify and experiment with.
 
 There is still plenty I'd like to add.
 
@@ -494,7 +505,7 @@ Pinnule is already functional, but there is plenty of room for improvement.
 
 Some areas I'd like to explore:
 
-* More container controls
+* Compose editing and re depolyment
 * Additional hardware metrics
 * More detailed network information
 * Improved application discovery
