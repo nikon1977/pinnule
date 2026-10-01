@@ -38,7 +38,7 @@ It automatically discovers running containers, displays system statistics, and p
     </td>
     <td align="center">
       <img src="screenshots/ss7.jpg" width="160"><br>
-      <sub>Mobile — container logs/sub>
+      <sub>Mobile — container logs</sub>
     </td>
     <td align="center">
       <img src="screenshots/ss8.jpg" width="160"><br>
@@ -457,7 +457,7 @@ This is harmless and does not affect the rest of Pinnule.
 
 ## 🛠️ Extending Pinnule
 
-The project main files were getting to large to follw so I split these down to make it easier to follow.
+The project main files were getting too large to follow so I split these down to make it easier to follow.
 
 The backend is split by concern:
 
@@ -505,7 +505,7 @@ Pinnule is already functional, but there is plenty of room for improvement.
 
 Some areas I'd like to explore:
 
-* Compose editing and re depolyment
+* Compose editing and redeployment
 * Additional hardware metrics
 * More detailed network information
 * Improved application discovery
