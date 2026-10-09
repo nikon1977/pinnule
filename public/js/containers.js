@@ -183,13 +183,9 @@ let lastCardSignatures = new Map();
 function renderContainers(list) {
   lastContainers = list;
   const grid = document.getElementById('container-grid');
-  const countEl = document.getElementById('container-count');
 
   const byState = settings.showStopped ? list : list.filter(c => c.state === 'running');
   const visible = settings.showHidden ? byState : byState.filter(c => !c.hidden);
-  const totalContainers = list.length;
-  const runningContainers = list.filter(c => c.state === 'running').length;
-  countEl.textContent = `${totalContainers} container${totalContainers === 1 ? '' : 's'} detected \u2014 ${runningContainers} running`;
 
   if (!visible.length) {
     grid.innerHTML = '<div class="empty-state">no containers to show. check docker.sock is mounted, or enable \u201cshow stopped\u201d / \u201cshow hidden\u201d in settings.</div>';
