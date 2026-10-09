@@ -407,5 +407,4 @@
   window.renderPanel = renderPanel;
   window.renderPanelContainers = renderPanelContainers;
   window.panelSetLink = panelSetLink;
-  window.panelLayout = layout;
 })();

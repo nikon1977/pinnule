@@ -9,11 +9,6 @@ function fmtBytes(n) {
   return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)}${units[i]}`;
 }
 
-function fmtRate(bytesPerSec) {
-  if (bytesPerSec == null || Number.isNaN(bytesPerSec)) return '\u2014';
-  return `${fmtBytes(bytesPerSec)}/s`;
-}
-
 function fmtUptime(sec) {
   if (sec == null) return '\u2014';
   const d = Math.floor(sec / 86400);
@@ -54,13 +49,6 @@ function appIcon(name, explicit) {
   if (explicit) return explicit;
   const slug = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   return `https://cdn.jsdelivr.net/gh/selfhst/icons/png/${slug}.png`;
-}
-
-function meterClass(pct) {
-  if (pct == null) return '';
-  if (pct >= 85) return 'bad';
-  if (pct >= 60) return 'warn';
-  return '';
 }
 
 function dotClass(state) {

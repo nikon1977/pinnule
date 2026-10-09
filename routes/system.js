@@ -27,7 +27,6 @@ function collectHostDisks(allDisks) {
     if (seen.has(mount)) continue; // dedupe repeated bind-mount entries
     seen.set(mount, {
       mount,
-      fsType: d.type,
       totalBytes: d.size,
       usedBytes: d.used,
       usedPct: d.use,
@@ -116,7 +115,6 @@ router.get('/', requireAuth, async (req, res) => {
       cpu: {
         loadPct: cpu.currentLoad,
         cores: cpuData.cores,
-        model: `${cpuData.manufacturer} ${cpuData.brand}`.trim(),
         speedGHz: (cpuSpeed && cpuSpeed.avg) || cpuData.speed || null,
       },
       memory: {

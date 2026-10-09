@@ -278,6 +278,7 @@ html.kiosk .hp-stage { border: 0; border-radius: 0; }
   background: var(--panel);
   border-radius: 3px;
   padding: 13px 15px;
+  transition: border-color 0.18s ease, transform 0.18s ease, background 0.18s ease;
 }
 .c-card.is-stopped { opacity: 0.55; }
 .c-card.is-hidden { border-style: dashed; }
@@ -292,7 +293,7 @@ html.kiosk .hp-stage { border: 0; border-radius: 0; }
 .c-name {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   flex: 1;
   min-width: 0;
 }
@@ -417,7 +418,7 @@ a.c-name-link:hover { color: var(--accent); }
 .c-stat-label { color: var(--text-dim); font-size: 10px; margin-bottom: 3px; }
 .c-stat-value { font-size: 12.5px; margin-bottom: 4px; }
 .c-stat-meter { height: 3px; background: var(--border-soft); border-radius: 2px; overflow: hidden; }
-.c-stat-meter-fill { height: 100%; background: var(--accent); }
+.c-stat-meter-fill { height: 100%; background: var(--accent); transition: width 0.4s ease; }
 
 .empty-state {
   color: var(--text-dim);
@@ -442,20 +443,12 @@ a.c-name-link:hover { color: var(--accent); }
 
 /* ---------- enhanced container cards ---------- */
 
-.c-card {
-  transition: border-color 0.18s ease, transform 0.18s ease, background 0.18s ease;
-}
 .c-card:hover {
   border-color: #3a464f;
   background: var(--panel-raised);
   transform: translateY(-1px);
 }
 
-.c-name {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 .c-icon {
   width: 22px;
   height: 22px;
@@ -477,10 +470,6 @@ a.c-name-link:hover { color: var(--accent); }
   border-top: 1px solid var(--border-soft);
 }
 .c-meta span:last-child { text-align: right; }
-
-.c-stat-meter-fill {
-  transition: width 0.4s ease;
-}
 
 @media (max-width: 640px) {
   main { padding: 14px 14px 30px; }

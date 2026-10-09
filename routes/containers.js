@@ -73,7 +73,6 @@ router.get('/', requireAuth, async (req, res) => {
         image: c.Image,
         state: c.State,
         status: c.Status,
-        ports,
         appUrl,
         autoUrl: labelUrl,
         urlOverridden: hasOverride,
