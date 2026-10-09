@@ -177,20 +177,27 @@ If you ever lose both your password and your recovery code, the account can only
 
 ## ✨ Features
 
-### 🖥️ Hardware monitoring
+### 🖥️ Host panel
 
-Pinnule provides a configurable overview of the host system, including:
+The top of the page is a 1280×400 status panel for the host, in three bands:
 
-* CPU load
-* Memory usage
-* Disk usage
-* Network throughput
-* Temperature
-* System uptime
+* **Identity**: a clock and date, plus hostname, IP address, OS, uptime and load average (1, 5 and 15 minutes). The gear and logout buttons and the live/offline indicator sit at the bottom of this band.
+* **Vitals**: dials for CPU, memory, storage and CPU temperature, above a network graph that shows download and upload in Mbps over the last 60 readings. Dials turn amber, then red, as they cross their warning levels. When there's more than one drive, the storage dial cycles through them every 6 seconds; click it to skip ahead.
+* **Containers**: running/total count, a health pill (unhealthy and restarting containers are called out), and the first eight containers. Problems sort to the top and stopped containers to the bottom.
 
-The hardware panels can be enabled or disabled from the **Settings** drawer using the gear icon.
+The panel scales to the width of the page. On a phone it stacks into a single column instead.
 
-The polling interval is also configurable.
+**Kiosk mode:** add `#kiosk` to the address (for example `https://pinnule.home.arpa/#kiosk`) to show only the panel, filling the window. This is made for a dedicated 1280×400 bar display:
+
+```bash
+chromium --kiosk --noerrdialogs --disable-infobars "https://pinnule.home.arpa/#kiosk"
+```
+
+You can override what the identity band shows with environment variables in `docker-compose.yml`: `DISPLAY_HOSTNAME`, `DISPLAY_IP` and `DISPLAY_OS` (handy for something like `Ubuntu 26.04 · CasaOS`).
+
+The panel's numbers use the Barlow Condensed font from Google Fonts. If the server has no internet access, the panel falls back to a system font and sizes the clock to fit.
+
+The polling interval is configurable in the **Settings** drawer.
 
 Your preferences are stored in the browser using `localStorage`, so they persist between page reloads.
 
@@ -377,7 +384,7 @@ Make sure other applications aren't already using those ports.
 
 ## 💾 Disk detection
 
-The **DISK** panel displays:
+The **storage** dial shows:
 
 * The main `/` filesystem
 * Filesystems mounted under `/mnt/`
@@ -438,7 +445,7 @@ If you're running an older Docker/kernel combination and something doesn't start
 
 One honest limitation worth being direct about: since Pinnule needs access to `/var/run/docker.sock` to function, a compromise of Pinnule itself is roughly equivalent to root on the host, regardless of any of the hardening above — the Docker socket can be used to launch a new, fully-privileged container that undoes any of these restrictions. The mitigations that actually matter here are the ones around Pinnule's own attack surface: everything is behind authentication, and the Docker API calls Pinnule makes are narrow and validated (start/stop/restart a specific, already-existing container by a checked ID — never arbitrary commands).
 
-## 🌡️ If TEMP shows `n/a`
+## 🌡️ If CPU temp shows a dash
 
 Temperature monitoring depends on what sensors your hardware and kernel expose through:
 
@@ -450,8 +457,10 @@ Some systems simply don't expose usable temperature information there.
 
 If temperature remains unavailable, you can either:
 
-1. Disable the TEMP panel in Pinnule's settings, or
+1. Leave it: the dial shows "no sensor found" and everything else carries on, or
 2. Install `lm-sensors` on the host and check whether additional sensors become available.
+
+The fan speed under the temperature dial comes from `/sys/class/hwmon` and only appears when the hardware reports a fan.
 
 This is harmless and does not affect the rest of Pinnule.
 
@@ -478,7 +487,7 @@ The frontend is similarly split under `public/js/`:
 ```text
 public/js/format.js     -- display/formatting helpers (byte sizes, uptime, icons)
 public/js/settings.js    -- settings storage + the settings drawer
-public/js/hardware.js    -- the hardware stats strip
+public/js/panel.js       -- the 1280x400 host panel at the top (and #kiosk mode)
 public/js/containers.js   -- container cards: rendering, start/stop/restart, links, hide/show
 public/js/logs.js        -- the full-screen logs overlay
 public/js/app.js        -- polling loop, error banner, startup

@@ -4,7 +4,6 @@ const SETTINGS_KEY = 'pinnule-settings';
 
 const defaultSettings = {
   interval: 5000,
-  metrics: { cpu: true, memory: true, disk: true, network: true, temp: true, uptime: true },
   showStopped: true,
   showHidden: false,
 };
@@ -14,7 +13,10 @@ function loadSettings() {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return structuredClone(defaultSettings);
     const parsed = JSON.parse(raw);
-    return { ...structuredClone(defaultSettings), ...parsed, metrics: { ...defaultSettings.metrics, ...(parsed.metrics || {}) } };
+    // older versions also stored per-panel `metrics` toggles; the panel is
+    // fixed now, so that key is simply ignored
+    const { metrics, ...rest } = parsed;
+    return { ...structuredClone(defaultSettings), ...rest };
   } catch (e) {
     return structuredClone(defaultSettings);
   }
@@ -35,7 +37,6 @@ function initSettingsUI() {
   const intervalSelect = document.getElementById('opt-interval');
   const stoppedCheckbox = document.getElementById('opt-show-stopped');
   const hiddenCheckbox = document.getElementById('opt-show-hidden');
-  const metricCheckboxes = document.querySelectorAll('input[data-metric]');
 
   // The "current password" reauth fields look like an ordinary login field
   // to the browser, so it'll happily autofill a saved password into them —
@@ -62,7 +63,6 @@ function initSettingsUI() {
   intervalSelect.value = String(settings.interval);
   stoppedCheckbox.checked = settings.showStopped;
   hiddenCheckbox.checked = settings.showHidden;
-  metricCheckboxes.forEach(cb => { cb.checked = !!settings.metrics[cb.dataset.metric]; });
 
   toggleBtn.addEventListener('click', () => {
     panel.hidden = !panel.hidden;
@@ -89,13 +89,5 @@ function initSettingsUI() {
     settings.showHidden = hiddenCheckbox.checked;
     saveSettings(settings);
     pollOnce();
-  });
-
-  metricCheckboxes.forEach(cb => {
-    cb.addEventListener('change', () => {
-      settings.metrics[cb.dataset.metric] = cb.checked;
-      saveSettings(settings);
-      pollOnce();
-    });
   });
 }

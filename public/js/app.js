@@ -3,7 +3,6 @@
 let pollTimer = null;
 
 async function pollOnce() {
-  const dot = document.getElementById('conn-dot');
   try {
     const [sysRes, containersRes] = await Promise.all([
       fetch('/api/system'),
@@ -18,17 +17,18 @@ async function pollOnce() {
     const sys = await sysRes.json();
     const containers = await containersRes.json();
 
-    renderHardware(sys);
+    renderPanel(sys);
+    renderPanelContainers(containers);
     if (editingName === null) {
       renderContainers(containers);
     } else {
       // don't blow away an in-progress edit's focus/cursor on refresh
       lastContainers = containers;
     }
-    dot.className = 'dot dot--live';
+    panelSetLink(true);
     clearError();
   } catch (err) {
-    dot.className = 'dot dot--stopped';
+    panelSetLink(false);
     showError('lost connection to dashboard server \u2014 retrying\u2026');
   }
 }
@@ -39,7 +39,7 @@ function showError(msg) {
     banner = document.createElement('div');
     banner.id = 'error-banner';
     banner.className = 'error-banner';
-    document.querySelector('main').prepend(banner);
+    document.getElementById('hp').after(banner);
   }
   banner.textContent = msg;
 }
@@ -55,18 +55,19 @@ function restartPolling() {
   pollTimer = setInterval(pollOnce, settings.interval);
 }
 
-function tickClock() {
-  document.getElementById('host-time').textContent = new Date().toLocaleTimeString();
-}
-
 // ---------- boot ----------
 // The dashboard only starts polling once auth.js confirms the user is
 // logged in — it calls window.pinnuleStart() after that check succeeds.
 
+let appStarted = false;
+
 function startApp() {
-  initSettingsUI();
-  tickClock();
-  setInterval(tickClock, 1000);
+  // auth.js calls this again after a re-login, so only wire things up once
+  if (!appStarted) {
+    initSettingsUI();
+    panelInit();
+    appStarted = true;
+  }
   restartPolling();
 }
 
