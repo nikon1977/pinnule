@@ -34,7 +34,7 @@
 
   // "1.21 / 3.64 TB" -- both sides in the larger value's unit
   function pair(used, total) {
-    if (used == null || total == null) return '—';
+    if (used == null || total == null) return '\u2014';
     const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
     let i = 0, t = total;
     while (t >= 1024 && i < units.length - 1) { t /= 1024; i++; }
@@ -44,20 +44,20 @@
   }
 
   function mbps(bytesPerSec) {
-    return bytesPerSec == null ? null : (bytesPerSec * 8) / 1e6;
+    return Number.isFinite(bytesPerSec) && bytesPerSec >= 0 ? (bytesPerSec * 8) / 1e6 : null;
   }
   function fmtMbps(n) {
-    if (n == null) return '—';
+    if (n == null) return '\u2014';
     return n >= 100 ? n.toFixed(0) : n.toFixed(1);
   }
 
   // ---------- layout: scale / flow / kiosk ----------
 
+  function wantsKiosk() { return location.hash === '#kiosk' || /[?&]kiosk\b/.test(location.search); }
   function isKiosk() { return document.documentElement.classList.contains('kiosk'); }
 
   function layout() {
     const fit = $('hp-fit'), stage = $('hp-stage');
-    if (!fit || !stage) return;
     const kiosk = isKiosk();
     const flow = !kiosk && window.innerWidth < FLOW_BELOW_PX;
     fit.classList.toggle('hp-flow', flow);
@@ -66,20 +66,14 @@
       stage.style.transform = '';
       stage.style.width = '';
       fit.style.height = '';
-      return;
-    }
-
-    let s, w;
-    if (kiosk) {
-      w = window.innerWidth;
-      s = Math.min(w / 1280, window.innerHeight / 400);
     } else {
-      w = fit.clientWidth;
-      s = Math.min(w / 1280, MAX_SCALE);
+      const w = kiosk ? window.innerWidth : fit.clientWidth;
+      if (w <= 0) return;
+      const s = kiosk ? Math.min(w / 1280, window.innerHeight / 400) : Math.min(w / 1280, MAX_SCALE);
+      stage.style.transform = `scale(${s})`;
+      stage.style.width = `${w / s}px`;      // wider than 1280 when capped: middle band stretches
+      fit.style.height = `${400 * s}px`;
     }
-    stage.style.transform = `scale(${s})`;
-    stage.style.width = `${w / s}px`;      // wider than 1280 when capped: middle band stretches
-    fit.style.height = `${400 * s}px`;
     fitClock();
     drawChart();
   }
@@ -105,7 +99,7 @@
     cpu:  { label: 'CPU',      unit: '%',      warn: 75, crit: 90 },
     mem:  { label: 'Memory',   unit: '%',      warn: 80, crit: 92 },
     disk: { label: 'Storage',  unit: '%',      warn: 80, crit: 90 },
-    temp: { label: 'CPU temp', unit: '°C', warn: 70, crit: 85 },
+    temp: { label: 'CPU temp', unit: '\u00b0C', warn: 70, crit: 85 },
   };
 
   function buildDials() {
@@ -125,7 +119,7 @@
         <div class="hp-dial"><svg viewBox="0 0 118 104" aria-hidden="true">${ticks}
           <circle class="hp-track" cx="59" cy="54" r="${R}" stroke-dasharray="${LEN.toFixed(1)} ${C.toFixed(1)}" transform="rotate(135 59 54)"/>
           <circle class="hp-bar" cx="59" cy="54" r="${R}" stroke-dasharray="0 ${C.toFixed(1)}" transform="rotate(135 59 54)"/>
-        </svg><div class="hp-read"><span class="hp-num"><span class="hp-n">—</span><small>${g.unit}</small></span></div></div>
+        </svg><div class="hp-read"><span class="hp-num"><span class="hp-n">\u2014</span><small>${g.unit}</small></span></div></div>
         <div class="hp-label"></div>
         <div class="hp-sub">&nbsp;</div>`;
       wrap.appendChild(el);
@@ -152,8 +146,8 @@
     const f = has ? clamp(v / 100, 0, 1) : 0;
     g.bar.setAttribute('stroke-dasharray', `${(LEN * f).toFixed(1)} ${C.toFixed(1)}`);
     g.bar.style.stroke = !has ? 'var(--hp-dim)' : v >= g.crit ? 'var(--bad)' : v >= g.warn ? 'var(--warn)' : 'var(--accent)';
-    g.n.textContent = has ? Math.round(v) : '—';
-    g.sub.textContent = sub || ' ';
+    g.n.textContent = has ? Math.round(v) : '\u2014';
+    g.sub.textContent = sub || '\u00a0';
   }
 
   function drawDisk() {
@@ -237,9 +231,9 @@
   }
 
   function netLabel(iface) {
-    const secs = (HISTORY_MAX * (typeof settings !== 'undefined' ? settings.interval : 5000)) / 1000;
+    const secs = (HISTORY_MAX * settings.interval) / 1000;
     const span = secs >= 120 ? `${Math.round(secs / 60)} min` : `${Math.round(secs)} s`;
-    return `Network · ${iface || 'no interface'} · last ${span}`;
+    return `Network \u00b7 ${iface || 'no interface'} \u00b7 last ${span}`;
   }
 
   // ---------- clock ----------
@@ -259,14 +253,19 @@
   // ---------- public API ----------
 
   function panelInit() {
-    if (location.hash === '#kiosk' || /[?&]kiosk\b/.test(location.search)) {
-      document.documentElement.classList.add('kiosk');
-    }
+    document.documentElement.classList.toggle('kiosk', wantsKiosk());
     buildDials();
-    window.addEventListener('resize', layout);
+    // the window resizing isn't the only thing that changes the panel's
+    // width: a page scrollbar appearing once the cards load narrows it too
+    let lastWidth = -1;
+    new ResizeObserver(() => {
+      const w = $('hp-fit').clientWidth;
+      if (w !== lastWidth) { lastWidth = w; layout(); }
+    }).observe($('hp-fit'));
+    window.addEventListener('resize', layout);   // kiosk also scales to the window's height
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(layout);
     window.addEventListener('hashchange', () => {
-      document.documentElement.classList.toggle('kiosk', location.hash === '#kiosk');
+      document.documentElement.classList.toggle('kiosk', wantsKiosk());
       layout();
     });
     layout();
@@ -277,15 +276,15 @@
   function renderPanel(sys) {
     lastSys = sys;
     const host = sys.host || {};
-    $('hp-host').textContent = host.name || '—';
-    $('hp-ip').textContent = host.ip || '—';
-    $('hp-os').textContent = host.os || '—';
+    $('hp-host').textContent = host.name || '\u2014';
+    $('hp-ip').textContent = host.ip || '\u2014';
+    $('hp-os').textContent = host.os || '\u2014';
     $('hp-os').title = host.os || '';
-    $('hp-load').textContent = (host.load || []).map((x) => (+x).toFixed(2)).join('  ') || '—';
+    $('hp-load').textContent = (host.load || []).map((x) => (+x).toFixed(2)).join('  ') || '\u2014';
     if (sys.uptimeSec != null) { uptimeBase = Math.floor(sys.uptimeSec); uptimeAt = Date.now(); }
 
     const cpu = sys.cpu || {};
-    const ghz = cpu.speedGHz ? ` · ${(+cpu.speedGHz).toFixed(1)} GHz` : '';
+    const ghz = cpu.speedGHz ? ` \u00b7 ${(+cpu.speedGHz).toFixed(1)} GHz` : '';
     setDial(G.cpu, cpu.loadPct, cpu.cores ? `${cpu.cores} ${cpu.cores === 1 ? 'core' : 'cores'}${ghz}` : '');
 
     const m = sys.memory;
@@ -344,15 +343,14 @@
     // rows follow the same show-hidden setting as the cards below; stopped
     // containers are always listed here (they sort last) since a panel that
     // silently drops a crashed container would be hiding the one thing it's for
-    const showHidden = typeof settings !== 'undefined' && settings.showHidden;
-    const rows = all.filter((c) => showHidden || !c.hidden)
+    const rows = all.filter((c) => settings.showHidden || !c.hidden)
       .sort((a, b) => rank(a) - rank(b) || a.displayName.localeCompare(b.displayName));
     const extra = Math.max(0, rows.length - ROW_SLOTS);
 
     const meta = [`${stopped} stopped`];
     if (restarting) meta.push(`${restarting} restarting`);
     if (extra) meta.push(`+${extra} not shown`);
-    $('hp-ctrmeta').textContent = meta.join(' · ');
+    $('hp-ctrmeta').textContent = meta.join(' \u00b7 ');
 
     const ul = $('hp-ctrs');
     ul.innerHTML = '';
@@ -368,16 +366,18 @@
       let cpu = c.state;
       let cpuCls = 'hp-cpu';
       if (isRunning) {
-        cpu = c.cpuPct == null ? '…' : c.cpuPct < 1 ? '<1%' : `${Math.round(c.cpuPct)}%`;
+        cpu = c.cpuPct == null ? '\u2026' : c.cpuPct === 0 ? '0%' : c.cpuPct < 1 ? '<1%' : `${Math.round(c.cpuPct)}%`;
         if (c.cpuPct >= 50) cpuCls += ' hp-cpu--bad'; else if (c.cpuPct >= 20) cpuCls += ' hp-cpu--warn';
       }
 
       li.innerHTML = `<span class="${dot}"></span><span class="hp-name">${escapeHtml(c.displayName)}</span><span class="${cpuCls}">${escapeHtml(cpu)}</span>`;
-      li.title = `${c.displayName} — ${c.status || c.state}`;
+      li.title = `${c.displayName} \u2014 ${c.status || c.state}`;
       ul.appendChild(li);
     });
     if (!rows.length) {
-      ul.innerHTML = '<li class="hp-row--empty">No containers to show. Check that docker.sock is mounted.</li>';
+      ul.innerHTML = total
+        ? '<li class="hp-row--empty">All containers are hidden. Turn on \u201cshow hidden\u201d in settings to list them.</li>'
+        : '<li class="hp-row--empty">No containers to show. Check that docker.sock is mounted.</li>';
     }
   }
 
@@ -387,8 +387,7 @@
     if (ok) {
       lastOk = Date.now();
       el.className = 'hp-link';
-      const secs = (typeof settings !== 'undefined' ? settings.interval : 5000) / 1000;
-      el.textContent = `Live · every ${secs}s`;
+      el.textContent = `Live \u00b7 every ${settings.interval / 1000}s`;
       stage.classList.remove('hp-stale');
       if (lastSys) $('hp-netlabel').textContent = netLabel(lastSys.network && lastSys.network.iface);
     } else {
