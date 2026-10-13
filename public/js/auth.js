@@ -26,19 +26,19 @@ const pinnuleAuth = (() => {
   let mode = 'login'; // 'login' | 'setup' | 'recover'
   let pendingContinue = null;
 
-  function showError(msg) {
+  function showAuthError(msg) {
     errorBox.textContent = msg;
     errorBox.hidden = false;
   }
 
-  function clearError() {
+  function clearAuthError() {
     errorBox.hidden = true;
     errorBox.textContent = '';
   }
 
   function setMode(next, knownUsername) {
     mode = next;
-    clearError();
+    clearAuthError();
     form.hidden = false;
     recoveryView.hidden = true;
 
@@ -75,6 +75,7 @@ const pinnuleAuth = (() => {
   }
 
   function openOverlay() {
+    closeSettingsPanel();
     document.body.classList.add('auth-pending');
     overlay.hidden = false;
     logoutBtn.hidden = true;
@@ -125,7 +126,7 @@ const pinnuleAuth = (() => {
     } catch (err) {
       openOverlay();
       setMode('login');
-      showError('could not reach the server \u2014 retrying\u2026');
+      showAuthError('could not reach the server \u2014 retrying\u2026');
       setTimeout(checkStatus, 3000);
     }
   }
@@ -133,7 +134,7 @@ const pinnuleAuth = (() => {
   function handleSessionExpired() {
     if (window.pinnuleStop) window.pinnuleStop();
     openOverlay();
-    checkStatus().then(() => showError('your session expired \u2014 please sign in again'));
+    checkStatus().then(() => showAuthError('your session expired \u2014 please sign in again'));
   }
 
   async function postJson(url, body) {
@@ -149,7 +150,7 @@ const pinnuleAuth = (() => {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    clearError();
+    clearAuthError();
 
     const username = usernameInput.value.trim();
     const password = passwordInput.value;
@@ -158,19 +159,19 @@ const pinnuleAuth = (() => {
     const remember = rememberInput.checked;
 
     if (!username || !password) {
-      showError('username and password are required');
+      showAuthError('username and password are required');
       return;
     }
     if (mode === 'recover' && !recoveryCode) {
-      showError('recovery code is required');
+      showAuthError('recovery code is required');
       return;
     }
     if (mode !== 'login' && password !== confirmPassword) {
-      showError('passwords do not match');
+      showAuthError('passwords do not match');
       return;
     }
     if (mode !== 'login' && password.length < 8) {
-      showError('password must be at least 8 characters');
+      showAuthError('password must be at least 8 characters');
       return;
     }
 
@@ -197,7 +198,7 @@ const pinnuleAuth = (() => {
         if (window.pinnuleStart) window.pinnuleStart();
       }
     } catch (err) {
-      showError(err.message || 'something went wrong');
+      showAuthError(err.message || 'something went wrong');
     } finally {
       submitBtn.disabled = false;
     }
@@ -216,7 +217,6 @@ const pinnuleAuth = (() => {
       await fetch('/api/auth/logout', { method: 'POST' });
     } catch (e) { /* proceed to show the login screen regardless */ }
     if (window.pinnuleStop) window.pinnuleStop();
-    rcCodeDisplay.textContent = '';
     openOverlay();
     setMode('login');
   });
