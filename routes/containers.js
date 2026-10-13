@@ -10,6 +10,7 @@ const {
   isHidden, hideContainer, unhideContainer,
 } = require('../lib/stores');
 const { requireAuth } = require('../lib/session');
+const { linkHost } = require('../lib/host');
 
 const router = express.Router();
 
@@ -23,6 +24,8 @@ router.get('/', requireAuth, async (req, res) => {
       const name = (c.Names && c.Names[0] || '').replace(/^\//, '');
       return name !== SELF_NAME;
     });
+
+    const host = await linkHost(req.hostname);
 
     const currentIds = new Set(others.map(c => c.Id));
     for (const id of inspectCache.keys()) {
@@ -54,7 +57,7 @@ router.get('/', requireAuth, async (req, res) => {
         public: p.PublicPort, private: p.PrivatePort, protocol: p.Type || 'tcp'
       }));
       const appPort = pickAppPort(ports);
-      const autoUrl = appPort ? `http://${req.hostname}:${appPort.public}` : null;
+      const autoUrl = appPort ? `http://${host}:${appPort.public}` : null;
       const rawLabelUrl = labels['pinnule.url'];
       const labelUrl = (rawLabelUrl && isSafeAppUrl(rawLabelUrl)) ? rawLabelUrl : autoUrl;
       const hasOverride = hasUrlOverride(name);
