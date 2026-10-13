@@ -11,16 +11,20 @@ It automatically discovers running containers, displays system statistics, and p
 <table>
   <tr>
     <td align="center">
-      <img src="screenshots/ss1.png" width="300"><br>
-      <sub>Dashboard</sub>
+      <img src="Screenshots/ss.png" width="300"><br>
+      <sub>Login Window</sub>
     </td>
     <td align="center">
-      <img src="screenshots/ss2.png" width="300"><br>
-      <sub>Dashboard Menu</sub>
+      <img src="Screenshots/ss1.png" width="300"><br>
+      <sub>Dashboard/sub>
     </td>
     <td align="center">
-      <img src="screenshots/ss3.png" width="160"><br>
-      <sub>Mobile View</sub>
+      <img src="Screenshots/ss2.png" width="300"><br>
+      <sub>Dashboard Menu/sub>
+    </td>
+    <td align="center">
+      <img src="Screenshots/ss2.png" width="300"><br>
+      <sub>Log View/sub>
     </td>
   </tr>
 </table>
