@@ -2,7 +2,7 @@ const express = require('express');
 
 const {
   docker, SELF_ID, SELF_NAME,
-  isValidContainerId, isSafeAppUrl, pickAppPort, cpuPercentFromStats, demuxLogBuffer,
+  isValidContainerId, isSafeAppUrl, pickAppPort, cpuPercentFromStats, memUsedFromStats, demuxLogBuffer,
   getContainerMeta, inspectCache,
 } = require('../lib/docker');
 const {
@@ -45,9 +45,8 @@ router.get('/', requireAuth, async (req, res) => {
         try {
           const stats = await docker.getContainer(c.Id).stats({ stream: false });
           cpuPct = cpuPercentFromStats(stats);
-          const cache = (stats.memory_stats.stats && stats.memory_stats.stats.cache) || 0;
-          memUsed = stats.memory_stats.usage - cache;
-          memLimit = stats.memory_stats.limit;
+          memUsed = memUsedFromStats(stats);
+          memLimit = (stats.memory_stats && stats.memory_stats.limit) || null;
         } catch (e) { /* container may have stopped mid-poll */ }
       }
 
