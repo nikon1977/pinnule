@@ -63,7 +63,10 @@ function closeLogsOverlay() {
   overlay.style.left = originRect.left + 'px';
   overlay.style.width = originRect.width + 'px';
   overlay.style.height = originRect.height + 'px';
-  overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
+  // style.css turns transitions off for prefers-reduced-motion, and then
+  // transitionend never fires -- remove straight away in that case
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) overlay.remove();
+  else overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
   activeLogsOverlay = null;
 }
 

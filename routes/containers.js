@@ -2,7 +2,7 @@ const express = require('express');
 
 const {
   docker, SELF_ID, SELF_NAME,
-  isValidContainerId, isSafeAppUrl, pickAppPort, cpuPercentFromStats, demuxLogBuffer,
+  isValidContainerId, isSafeAppUrl, pickAppPort, cpuPercentFromStats, memUsedFromStats, demuxLogBuffer,
   getContainerMeta, inspectCache,
 } = require('../lib/docker');
 const {
@@ -10,6 +10,7 @@ const {
   isHidden, hideContainer, unhideContainer,
 } = require('../lib/stores');
 const { requireAuth } = require('../lib/session');
+const { linkHost } = require('../lib/host');
 
 const router = express.Router();
 
@@ -23,6 +24,8 @@ router.get('/', requireAuth, async (req, res) => {
       const name = (c.Names && c.Names[0] || '').replace(/^\//, '');
       return name !== SELF_NAME;
     });
+
+    const host = await linkHost(req.hostname);
 
     const currentIds = new Set(others.map(c => c.Id));
     for (const id of inspectCache.keys()) {
@@ -45,9 +48,8 @@ router.get('/', requireAuth, async (req, res) => {
         try {
           const stats = await docker.getContainer(c.Id).stats({ stream: false });
           cpuPct = cpuPercentFromStats(stats);
-          const cache = (stats.memory_stats.stats && stats.memory_stats.stats.cache) || 0;
-          memUsed = stats.memory_stats.usage - cache;
-          memLimit = stats.memory_stats.limit;
+          memUsed = memUsedFromStats(stats);
+          memLimit = (stats.memory_stats && stats.memory_stats.limit) || null;
         } catch (e) { /* container may have stopped mid-poll */ }
       }
 
@@ -55,7 +57,7 @@ router.get('/', requireAuth, async (req, res) => {
         public: p.PublicPort, private: p.PrivatePort, protocol: p.Type || 'tcp'
       }));
       const appPort = pickAppPort(ports);
-      const autoUrl = appPort ? `http://${req.hostname}:${appPort.public}` : null;
+      const autoUrl = appPort ? `http://${host}:${appPort.public}` : null;
       const rawLabelUrl = labels['pinnule.url'];
       const labelUrl = (rawLabelUrl && isSafeAppUrl(rawLabelUrl)) ? rawLabelUrl : autoUrl;
       const hasOverride = hasUrlOverride(name);
@@ -73,7 +75,6 @@ router.get('/', requireAuth, async (req, res) => {
         image: c.Image,
         state: c.State,
         status: c.Status,
-        ports,
         appUrl,
         autoUrl: labelUrl,
         urlOverridden: hasOverride,
