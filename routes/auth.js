@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const express = require('express');
 const bcrypt = require('bcryptjs');
 
-const { getAuth, persistAuth, clearAuth, currentCredentialEpoch } = require('../lib/stores');
+const { getAuth, persistAuth, currentCredentialEpoch } = require('../lib/stores');
 const { reserveAttempt, clearAttempts } = require('../lib/rate-limit');
 const { applySessionLength, isSessionInvalid, requireAuth } = require('../lib/session');
 
@@ -89,7 +89,6 @@ router.post('/setup', async (req, res) => {
     try {
       persistAuth(newAuth);
     } catch (err) {
-      clearAuth();
       return res.status(500).json({ error: `could not save credentials: ${err.message}` });
     }
 
@@ -138,7 +137,7 @@ router.post('/login', async (req, res) => {
   if (!usernameMatches || !passwordMatches) {
     return res.status(401).json({ error: 'invalid username or password' });
   }
-  if (auth.passwordHash !== hashToCheck || currentCredentialEpoch() !== epochAtCheckStart) {
+  if (getAuth().passwordHash !== hashToCheck || currentCredentialEpoch() !== epochAtCheckStart) {
     // credentials changed mid-verification; what we just checked is stale
     return res.status(401).json({ error: 'credentials changed, please try again' });
   }
@@ -187,16 +186,20 @@ router.post('/recover', async (req, res) => {
     }
 
     clearAttempts('recover', ip);
-    auth.passwordHash = await bcrypt.hash(newPassword, 12);
-    // account recovery is exactly the "I think someone else has my
-    // credentials" case, so this is the one place that must invalidate every
-    // other session, not just this one
-    auth.credentialEpoch = currentCredentialEpoch() + 1;
+    const passwordHash = await bcrypt.hash(newPassword, 12);
     // rotate the recovery code so the one just used can't be reused
     const newRecoveryCode = generateRecoveryCode();
-    auth.recoveryCodeHash = await bcrypt.hash(newRecoveryCode, 12);
+    const recoveryCodeHash = await bcrypt.hash(newRecoveryCode, 12);
     try {
-      persistAuth(auth);
+      persistAuth({
+        ...getAuth(),
+        passwordHash,
+        recoveryCodeHash,
+        // account recovery is exactly the "I think someone else has my
+        // credentials" case, so this must invalidate every other session,
+        // not just this one
+        credentialEpoch: currentCredentialEpoch() + 1,
+      });
     } catch (err) {
       return res.status(500).json({ error: `could not save new password: ${err.message}` });
     }
@@ -245,10 +248,9 @@ router.post('/change-password', requireAuth, async (req, res) => {
   }
 
   clearAttempts('reauth', req.sessionID);
-  auth.passwordHash = await bcrypt.hash(newPassword, 12);
-  auth.credentialEpoch = currentCredentialEpoch() + 1;
+  const passwordHash = await bcrypt.hash(newPassword, 12);
   try {
-    persistAuth(auth);
+    persistAuth({ ...getAuth(), passwordHash, credentialEpoch: currentCredentialEpoch() + 1 });
   } catch (err) {
     return res.status(500).json({ error: `could not save new password: ${err.message}` });
   }
@@ -273,9 +275,9 @@ router.post('/recovery-code/regenerate', requireAuth, async (req, res) => {
 
   clearAttempts('reauth', req.sessionID);
   const recoveryCode = generateRecoveryCode();
-  auth.recoveryCodeHash = await bcrypt.hash(recoveryCode, 12);
+  const recoveryCodeHash = await bcrypt.hash(recoveryCode, 12);
   try {
-    persistAuth(auth);
+    persistAuth({ ...getAuth(), recoveryCodeHash });
   } catch (err) {
     return res.status(500).json({ error: `could not save new recovery code: ${err.message}` });
   }
