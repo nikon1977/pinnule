@@ -29,5 +29,7 @@ It automatically discovers running containers, displays system statistics, and p
   </tr>
 </table>
 
+> **For full transparency this apps code has been built using A.I, full care has been taken to make sure all code is clean and relavent.**
+> **The app has been scanned using Trivy and uses a package lock to protect against common vulnerabilities and exposures.**
 
 To be re-written
