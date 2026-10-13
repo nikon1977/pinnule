@@ -8,6 +8,8 @@ Pinnule is a lightweight front-facing portal that sits on top of your local infr
 
 It automatically discovers running containers, displays system statistics, and provides quick access to your applications — with minimal configuration if any is required.
 
+The top panel also serves as a display to fit a 2u rack mount monitor. 
+
 <table>
   <tr>
     <td align="center">
