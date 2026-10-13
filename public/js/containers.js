@@ -21,7 +21,7 @@ function containerCardHtml(c) {
       </div>
     </div>` : '';
 
-  let actionBtns = '';
+  let actionBtns;
   if (c.state === 'running') {
     actionBtns = `
       <div class="c-actions">
