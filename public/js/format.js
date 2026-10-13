@@ -27,8 +27,8 @@ function fmtStartedAt(iso) {
 }
 
 function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>\"']/g, ch => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;'
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[ch]));
 }
 
