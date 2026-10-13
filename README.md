@@ -100,4 +100,8 @@ For example:
 https://192.168.1.230:4443
 ```
 
-Pinnule serves itself over HTTPS with a self-signed certificate it generates on first run (and reuses on every restart after that, so your browser's "trust this certificate" exception keeps working). Your browser will warn that the certificate isn't from a recognized authority the first time you connect — that's expected for a self-signed cert on a LAN-only app; proceed past the warning the same way you would for any other self-signed service on your network.
+### Using a reverse proxy
+
+When setting up a reverse proxy link in (for example) NPM, select http and use port 4000 and block common exploits.
+
+By default, plain HTTP (port 4000) doesn't serve the app — it redirects to Pinnule's own HTTPS port (4443), so a login password is never sent in cleartext.*). Your browser will warn that the certificate isn't from a recognized authority the first time you connect — that's expected for a self-signed cert on a LAN-only app; proceed past the warning the same way you would for any other self-signed service on your network.
