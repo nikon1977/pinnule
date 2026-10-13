@@ -1,6 +1,7 @@
 # Pinnule
 
 Current version 1.8.0
+(all older releases deleted due to bug in container links when using reverse proxy)
 
 **A nimble, lightweight dashboard for your homelab.**
 
