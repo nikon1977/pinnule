@@ -2,13 +2,13 @@
 # Kept separate so the npm CLI itself (and everything npm bundles
 # internally to do its own job -- tar, pacote, sigstore, minimatch, etc.)
 # never has to exist in the final image.
-FROM node:20-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 
 # ---- final stage: runtime only ----
-FROM node:20-alpine
+FROM node:24-alpine
 RUN apk update && apk upgrade && apk add --no-cache openssl \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 WORKDIR /app
