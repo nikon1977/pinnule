@@ -4,6 +4,7 @@ const express = require('express');
 const si = require('systeminformation');
 
 const { requireAuth } = require('../lib/session');
+const { ipv4For } = require('../lib/host');
 
 const router = express.Router();
 
@@ -53,13 +54,6 @@ const HOST_OS = process.env.DISPLAY_OS || (() => {
   const m = rel.match(/^PRETTY_NAME="?([^"\n]*)"?/m);
   return m ? m[1] : `${os.type()} ${os.release()}`;
 })();
-
-function ipv4For(iface) {
-  if (process.env.DISPLAY_IP) return process.env.DISPLAY_IP;
-  const addrs = (os.networkInterfaces()[iface] || [])
-    .filter(a => (a.family === 'IPv4' || a.family === 4) && !a.internal);
-  return addrs.length ? addrs[0].address : null;
-}
 
 // systeminformation doesn't report fan speeds, so read hwmon directly:
 // the first fan*_input that reports a non-zero rpm. Paths are looked up
